@@ -12,21 +12,23 @@ struct Saw
 };
 
 // Callback function automatically invoked when buffer is empty
+// Adapted from RtAudio documentation:
+// https://www.music.mcgill.ca/~gary/rtaudio/playback.html
 int fillBuffer 
-( void * outputBuffer, 
-  void * inputBuffer, 
+( void* outputBuffer, 
+  void* inputBuffer, 
   unsigned int nBufferFrames,
   double streamTime, 
   RtAudioStreamStatus status, 
-  void * rack 
+  void* rack 
 )
 {
   unsigned int i, j;
-  double *buffer = (double *) outputBuffer;
-  Saw* s = (Saw *) rack;
-  double *lastValues = s->buf;
+  double* buffer = (double*) outputBuffer;
+  Rack* r = (Rack*) rack;
+  double* lastValues = NULL;
   bool up = true;
-  if ( status )
+  if (status)
     std::cout << "Stream underflow detected!" << std::endl;
   // Write interleaved audio data.
   for ( i=0; i<nBufferFrames; i++ ) {
@@ -38,6 +40,24 @@ int fillBuffer
     }
   }
   return 0;
+}
+
+void closeStream(RtAudio & dac)
+{
+  try 
+  {
+    dac.stopStream();
+  }
+
+  catch (RtAudioError& e) 
+  {
+    e.printMessage();
+  }
+
+  if (dac.isStreamOpen()) 
+  {
+    dac.closeStream();
+  }
 }
 
 int main()
@@ -55,13 +75,20 @@ int main()
   unsigned int bufferFrames = 256; // 256 sample frames
   Saw s;
   try {
-    dac.openStream( &parameters, NULL, RTAUDIO_FLOAT64,
-                    sampleRate, &bufferFrames, &fillBuffer, (void *)&s);
+    dac.openStream
+      ( &parameters, 
+        NULL, 
+        RTAUDIO_FLOAT64,
+        sampleRate, 
+        &bufferFrames, 
+        &fillBuffer, 
+        (void*) &s
+      );
     dac.startStream();
   }
-  catch ( RtAudioError& e ) {
+  catch (RtAudioError& e) {
     e.printMessage();
-    exit( 0 );
+    exit(0);
   }
  
   Rack rack; 
@@ -72,13 +99,6 @@ int main()
   mvprintw(0, 0, str);
   getch();
   endwin();
-  try {
-    // Stop the stream
-    dac.stopStream();
-  }
-  catch (RtAudioError& e) {
-    e.printMessage();
-  }
-  if ( dac.isStreamOpen() ) dac.closeStream();
+  closeStream(dac);
   return 0;
 }

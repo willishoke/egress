@@ -6,11 +6,10 @@ using Signal = double;
 class Module
 {
   public:
-    virtual ~Module() {}
+    virtual ~Module();
 
     Module(int in_size, int out_size)
     {
-      ++module_count;
       inputs.resize(in_size);
       outputs.resize(out_size);
     }
@@ -18,8 +17,6 @@ class Module
     virtual void process() = 0;
    
     std::string module_name;
-    unsigned int module_id; 
-    static unsigned int module_count;
 
   protected:
     std::vector<Signal> inputs;
@@ -32,11 +29,17 @@ class Module
 class VCO : public Module
 { 
   public:
-    VCO(int buffer_size) : 
-      Module(
+    VCO(int freq, std::string name) : 
+      Module
+      (
         IN_COUNT,
         OUT_COUNT
-      ) {}
+      ) 
+    {
+      frequency = freq;
+      value = 0.0;
+      rising = true;
+    }
   
     enum Ins
     {
@@ -56,14 +59,14 @@ class VCO : public Module
     void process() 
     {
       // Multiply by 2 since using triangular base
-      double step = 2 * 44100 / freq; 
+      double step = 2 * 44100 / frequency; 
       if (!rising) step = -step;
 
       value += step;
       value *= inputs[AM] / 5.0;
 
       // lots of potential for optimization here --
-      //  calculate values on demand?
+      // calculate values on demand?
       outputs[TRI] = value;
       outputs[SQR] = value > 0.0 ? 5.0 : -5.0;
       outputs[SIN] = sin(value);
@@ -80,8 +83,9 @@ class VCO : public Module
         rising = !rising;
       }
     }
+
   private:
-    double freq;
+    double frequency;
     double value; 
     bool rising;
 };

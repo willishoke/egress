@@ -1,19 +1,23 @@
 # egress
 
+### Willis Hoke
+
 ### Modules
 
-#### SUM
-A mixer. Linear or logarithmic response.
+
+#### VCO
+A voltage controlled oscillator
+
+Parameter specifies initial frequency
+
+Inputs: `am`, `fm`
+
+Outputs: `sin`, `sqr`, and `tri`
+
 
 #### MUL
 4-quadrant multiplication
 
-#### VCO
-A voltage controlled oscillator.
-Traingle waveform - use w/ wavetable for other shapes
-Variable speed from 0hz - 1mhz
+Optional argument specifies offset in range [-10.0, 10.0]
 
-#### FLT
-Pingable filter
-
-####
+Unity gain with input value of 5.0

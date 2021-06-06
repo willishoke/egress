@@ -6,7 +6,7 @@ using Signal = double;
 class Module
 {
   public:
-    virtual ~Module();
+    virtual ~Module() {}
 
     Module(int in_size, int out_size)
     {
@@ -29,7 +29,7 @@ class Module
 class VCO : public Module
 { 
   public:
-    VCO(int freq, std::string name) : 
+    VCO(int freq) : 
       Module
       (
         IN_COUNT,

@@ -19,20 +19,39 @@ using mPtr = std::unique_ptr<Module>;
 class Rack
 {
   public:
+    Rack(unsigned int bufferLength) 
+    {
+      this->bufferLength = bufferLength;
+      this->outputBuffer.resize(bufferLength);
+      this->bufferPosition = 0;
+    }
+
     void process()
     {
       // fill entire output buffer!
       for (auto i = 0; i < bufferLength; ++i)
       {
         // propogate previous values through graph
-        for (auto & [from, to] : connections) 
+        for (const auto & [from, to] : connections) 
         {
           auto from_name = from.first;
-          auto from_output = from.second; 
+          auto from_index = from.second; 
           auto to_name = to.first;
-          auto to_input = to.second; 
+          auto to_index = to.second; 
+           
+          modules[to_name]->inputs[to_index] = modules[from_name]->outputs[from_index];
+
+          // probably cheaper to process here to avoid cache miss
+          modules[from_name]->process();
         }
+
+        for (const auto & [name, index] : mix)
+        {
+          outputBuffer[bufferPosition] = modules[name]->outputs[index];
+        }
+
         ++bufferPosition;
+        bufferPosition %= bufferLength;
       } 
     } 
  
@@ -41,6 +60,12 @@ class Rack
     {
       // again, need to invoke move to transfer ownership 
       modules.insert({name, std::move(new_module)}); 
+      return true;
+    }
+
+    bool addOutput(outputID output)
+    {
+      mix.push_back(output);
       return true;
     }
 
@@ -82,25 +107,37 @@ class Rack
     bool remove_module(std::string module_name)
     {
       // first check to make sure module exists
+      for (auto && [name, m] : modules)
+      {
+        if (module_name == name) 
+        {
+          
+        }
+      }
       // remove all of its connections
       return true;
 
       return false;
     }
 
-    unsigned int bufferLength;
-    unsigned int bufferPosition;
+    // rack controls buffer -- modules only store output for single timestep
+    // mono for now, values get duplicated for each channel during output
+    // this needs to be public so callback can access it
+    std::vector<double> outputBuffer;
   
   private:
+
+    unsigned int bufferLength;
+    unsigned int bufferPosition;
+
     // modules store their own state and calculate their own values
     std::unordered_map<std::string, mPtr> modules;
 
     // keeps track of all connections between modules
-    // map <module_id, output_id> -> <module_id, input_id>
+    // map <module_name, output_id> -> <module_name, input_id>
     // too bad structs don't work as keys without additional legwork
     std::multimap<inputID, outputID> connections;
 
-    // rack controls buffer -- modules only store output for single timestep
-    // mono for now, values get duplicated for each channel during output
-    std::vector<double> outputs;
+    // mix keeps track of outputs 
+    std::vector<outputID> mix;
 };

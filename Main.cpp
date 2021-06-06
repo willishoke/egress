@@ -4,6 +4,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <cmath>
+#include <utility>
 
 // This is for testing callback function
 struct Saw
@@ -15,28 +16,29 @@ struct Saw
 // Adapted from RtAudio documentation:
 // https://www.music.mcgill.ca/~gary/rtaudio/playback.html
 int fillBuffer 
-( void* outputBuffer, 
-  void* inputBuffer, 
+( void * outputBuffer, 
+  void * inputBuffer, 
   unsigned int nBufferFrames,
   double streamTime, 
   RtAudioStreamStatus status, 
-  void* rack 
+  void * rack 
 )
 {
-  unsigned int i, j;
-  double* buffer = (double*) outputBuffer;
-  Rack* r = (Rack*) rack;
-  double* lastValues = NULL;
-  bool up = true;
+  double * buffer = (double *) outputBuffer;
+  Rack * r = (Rack *) rack;
   if (status)
     std::cout << "Stream underflow detected!" << std::endl;
-  // Write interleaved audio data.
-  for ( i=0; i<nBufferFrames; i++ ) {
-    for ( j=0; j<2; j++ ) {
-      *buffer++ = sin(lastValues[j]);
-      lastValues[j] += up ? 0.05 : -0.05;
-      if ( lastValues[j] >= 1.0 ) up = false;
-      if ( lastValues[j] <= -1.0 ) up = true;
+
+  std::cout << rack << std::endl;
+  // fill rack mixer buffer and update values
+  r->process();
+
+  // write interleaved audio data
+  for (auto i = 0; i < nBufferFrames; ++i) 
+  {
+    for (auto j = 0; j < 2; j++) 
+    {
+      *buffer++ = r->outputBuffer.at(i);
     }
   }
   return 0;
@@ -63,9 +65,10 @@ void closeStream(RtAudio & dac)
 int main()
 {
   RtAudio dac;
-  if ( dac.getDeviceCount() < 1 ) {
+  if (dac.getDeviceCount() < 1) 
+  {
     std::cout << "\nNo audio devices found!\n";
-    exit( 0 );
+    exit(0);
   }
   RtAudio::StreamParameters parameters;
   parameters.deviceId = dac.getDefaultOutputDevice();
@@ -73,8 +76,13 @@ int main()
   parameters.firstChannel = 0;
   unsigned int sampleRate = 44100;
   unsigned int bufferFrames = 256; // 256 sample frames
-  Saw s;
-  try {
+  Rack rack(bufferFrames);
+  mPtr vco = std::make_unique<VCO>(440);
+  rack.add_module("vco", std::move(vco));
+  rack.addOutput(std::make_pair("vco", VCO::SIN));
+
+  try 
+  {
     dac.openStream
       ( &parameters, 
         NULL, 
@@ -82,16 +90,17 @@ int main()
         sampleRate, 
         &bufferFrames, 
         &fillBuffer, 
-        (void*) &s
+        (void*) &rack
       );
     dac.startStream();
   }
-  catch (RtAudioError& e) {
+
+  catch (RtAudioError& e) 
+  {
     e.printMessage();
     exit(0);
   }
  
-  Rack rack; 
   std::cout << "\nEnter note\n";
   initscr();
   char str[80];

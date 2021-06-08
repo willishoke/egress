@@ -37,55 +37,51 @@ class VCO : public Module
       ) 
     {
       frequency = freq;
-      value = 0.0;
-      rising = true;
+      core = 0.0;
     }
   
     enum Ins
     {
       FM,
-      AM,
       IN_COUNT
     };
   
     enum Outs
     {
-      SIN,
+      SAW,
       TRI,
+      SIN,
       SQR,
       OUT_COUNT
     };
 
+    // saw core lets us get 4 output waveforms
+    // core takes on values in range [0.0, 1.0]
+    // output in range [-5.0, 5.0]
     void process() 
     {
-      // Multiply by 2 since using triangular base
-      double step = 2 * 44100 / frequency; 
-      if (!rising) step = -step;
+      double freq = frequency;
 
-      value += step;
-      value *= inputs[AM] / 5.0;
+      // increment core value
+      core += freq / 44100;
+      // floating point modulus
+      core = fmod(core, 1.0);
 
-      // lots of potential for optimization here --
-      // calculate values on demand?
-      outputs[TRI] = value;
-      outputs[SQR] = value > 0.0 ? 5.0 : -5.0;
-      outputs[SIN] = sin(value);
-
-      if (value > 5.0) 
-      {
-        value = 5.0;
-        rising = !rising;
+      outputs[SAW] = 10.0 * core - 5.0;
+      outputs[TRI] = 2.0 * abs(outputs[SAW]) - 5.0;
+      outputs[SIN] = -5.0 * cos(M_PI * (outputs[TRI] / 10.0 + 0.5));
+      outputs[SQR] = core - 0.5 > 0.0 ? 5.0 : -5.0;
+       
+      // for debugging emergencies, run for single cycle and pipe stdout to csv
+      /*
+      std::cout << core << ' ';
+      for (auto i = 0; i < OUT_COUNT; ++i) {
+        std::cout << outputs[i] << ' ';
       }
-
-      if (value < -5.0) 
-      {
-        value = -5.0;
-        rising = !rising;
-      }
+      */
     }
 
   private:
     double frequency;
-    double value; 
-    bool rising;
+    double core; 
 };

@@ -14,6 +14,7 @@ Inputs: `am`, `fm`
 
 Outputs: `sin`, `sqr`, and `tri`
 
+![waveforms](output_waveforms.png)
 
 #### MUL
 4-quadrant multiplication

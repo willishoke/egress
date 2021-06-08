@@ -29,7 +29,7 @@ int fillBuffer
   if (status)
     std::cout << "Stream underflow detected!" << std::endl;
 
-  std::cout << rack << std::endl;
+  //std::cout << rack << std::endl;
   // fill rack mixer buffer and update values
   r->process();
 
@@ -75,7 +75,7 @@ int main()
   parameters.nChannels = 2;
   parameters.firstChannel = 0;
   unsigned int sampleRate = 44100;
-  unsigned int bufferFrames = 256; // 256 sample frames
+  unsigned int bufferFrames = 512;  
   Rack rack(bufferFrames);
   mPtr vco = std::make_unique<VCO>(440);
   rack.add_module("vco", std::move(vco));
@@ -100,7 +100,7 @@ int main()
     e.printMessage();
     exit(0);
   }
- 
+  /* 
   std::cout << "\nEnter note\n";
   initscr();
   char str[80];
@@ -108,6 +108,9 @@ int main()
   mvprintw(0, 0, str);
   getch();
   endwin();
+  */
+  char a;
+  std::cin >> a;
   closeStream(dac);
   return 0;
 }

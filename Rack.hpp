@@ -38,21 +38,26 @@ class Rack
           auto from_index = from.second; 
           auto to_name = to.first;
           auto to_index = to.second; 
-           
-          modules[to_name]->inputs[to_index] = modules[from_name]->outputs[from_index];
 
-          // probably cheaper to process here to avoid cache miss
-          modules[from_name]->process();
+          // pass output from one module to another
+          modules[to_name]->inputs[to_index] = modules[from_name]->outputs[from_index];
         }
+
+        for (auto & [name, m] : modules)
+        {
+          m->process();
+        }
+
+        outputBuffer[i] = 0.0;
 
         for (const auto & [name, index] : mix)
         {
-          outputBuffer[bufferPosition] = modules[name]->outputs[index];
+          // default output amplitude is 1/4 maximum
+          outputBuffer[i] += modules[name]->outputs[index] / 20.0;
         }
-
-        ++bufferPosition;
-        bufferPosition %= bufferLength;
       } 
+      // use only when debugging
+      // exit(0);
     } 
  
     // caller needs to use std::move to pass ownership
@@ -131,7 +136,7 @@ class Rack
     unsigned int bufferPosition;
 
     // modules store their own state and calculate their own values
-    std::unordered_map<std::string, mPtr> modules;
+    std::map<std::string, mPtr> modules;
 
     // keeps track of all connections between modules
     // map <module_name, output_id> -> <module_name, input_id>

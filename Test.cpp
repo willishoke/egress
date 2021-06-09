@@ -1,8 +1,3 @@
-/* 
- * * * * * * * *
- * E G R E S S *
- * * * * * * * *
- */
 
 #include "RtAudio.h"
 #include "Rack.hpp"
@@ -12,11 +7,10 @@
 #include <cmath>
 #include <utility>
 
-// Audio I/O code adapted from RtAudio documentation:
-// https://www.music.mcgill.ca/~gary/rtaudio/playback.html
-
 
 // Callback function automatically invoked when buffer is empty
+// Adapted from RtAudio documentation:
+// https://www.music.mcgill.ca/~gary/rtaudio/playback.html
 int fillBuffer 
 ( void * outputBuffer, 
   void * inputBuffer, 
@@ -77,14 +71,32 @@ int main()
   parameters.nChannels = 2;
   parameters.firstChannel = 0;
   unsigned int sampleRate = 44100;
-  unsigned int bufferFrames = 512;  
+  unsigned int bufferFrames = 64;  
+
   Rack rack(bufferFrames);
-  mPtr vco = std::make_unique<VCO>(440);
-  mPtr vco2 = std::make_unique<VCO>(20);
-  rack.addModule("vco", std::move(vco));
-  rack.addModule("vco2", std::move(vco2));
-  rack.connect("vco2", VCO::SIN, "vco", VCO::FM);
-  rack.addOutput(std::make_pair("vco", VCO::SIN));
+
+
+  rack.addModule("vco1", std::make_unique<VCO>(100));
+  rack.addModule("vco2", std::make_unique<VCO>(2.0));
+  rack.addModule("vco3", std::make_unique<VCO>(1.0));
+  rack.addModule("vca1", std::make_unique<MUL>());
+  rack.addModule("lfo1", std::make_unique<VCO>(.01));
+  rack.addModule("lfo2", std::make_unique<VCO>(10));
+  rack.addModule("c", std::make_unique<CONST>(1.5));
+
+  rack.connect("vco2", VCO::SIN, "vco1", VCO::FM);
+  rack.connect("vco3", VCO::SIN, "vco2", VCO::FM);
+  rack.connect("vco1", VCO::SIN, "vco3", VCO::FM);
+  rack.connect("lfo1", VCO::SAW, "vco3", VCO::FM);
+  rack.connect("vco1", VCO::SIN, "vca1", MUL::IN1);
+  rack.connect("lfo1", VCO::SIN, "vca1", MUL::IN2);
+
+  rack.connect("c", CONST::OUT, "vco3", VCO::FM_INDEX);
+  rack.connect("c", CONST::OUT, "vco1", VCO::FM_INDEX);
+  rack.connect("lfo1", VCO::SIN, "vco2", VCO::FM_INDEX);
+
+  rack.addOutput(std::make_pair("vca1", MUL::OUT));
+  rack.addOutput(std::make_pair("vco2", VCO::SIN));
 
   try 
   {
@@ -105,17 +117,9 @@ int main()
     e.printMessage();
     exit(0);
   }
-  /* 
-  std::cout << "\nEnter note\n";
   initscr();
-  char str[80];
-  getstr(str);
-  mvprintw(0, 0, str);
   getch();
   endwin();
-  */
-  char a;
-  std::cin >> a;
   closeStream(dac);
   return 0;
 }

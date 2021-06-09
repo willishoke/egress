@@ -57,11 +57,11 @@ class Rack
         }
       } 
       // use only when debugging
-      // exit(0);
+      //exit(0);
     } 
  
     // caller needs to use std::move to pass ownership
-    bool add_module(std::string name, mPtr new_module)
+    bool addModule(std::string name, mPtr new_module)
     {
       // again, need to invoke move to transfer ownership 
       modules.insert({name, std::move(new_module)}); 

@@ -4,8 +4,8 @@
  * * * * * * * *
  */
 
-#include "RtAudio.h"
-#include "Rack.hpp"
+#include "lib/RtAudio.h"
+#include "src/Rack.hpp"
 #include <curses.h>
 #include <iostream>
 #include <cstdlib>
@@ -31,7 +31,6 @@ int fillBuffer
   if (status)
     std::cout << "Stream underflow detected!" << std::endl;
 
-  //std::cout << rack << std::endl;
   // fill rack mixer buffer and update values
   r->process();
 
@@ -105,17 +104,9 @@ int main()
     e.printMessage();
     exit(0);
   }
-  /* 
-  std::cout << "\nEnter note\n";
   initscr();
-  char str[80];
-  getstr(str);
-  mvprintw(0, 0, str);
   getch();
   endwin();
-  */
-  char a;
-  std::cin >> a;
   closeStream(dac);
   return 0;
 }

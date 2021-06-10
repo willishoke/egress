@@ -4,7 +4,7 @@
 
 ## Intro
 
-`egress` is a an object-oriented C++ library for building realtime emulations of analog synthesizers. It is built to be lean, efficient, and portable, although it is currently only tested on MacOS. No external libraries are required. Sample rates down to 64 samples / second have been tested. Sample implementations are provided for voltage controlled oscillators (`VCO`), four-quadrant multipliers (`VCA`), and two-way analog multiplexers (`MUX`). A full suite of tests demonstrates functionality of each of the modules, showing waveform outputs for each of the VCO outputs and demonstrating basic exponential FM and linear AM.
+`egress` is a an object-oriented C++ library for realtime emulation of analog synthesis. It is built to be lean, efficient, and portable, although it is currently only tested on MacOS. No external libraries are required. Sample rates down to 64 samples / second have been tested. Sample implementations are provided for voltage controlled oscillators (`VCO`), four-quadrant multipliers (`VCA`), and two-way analog multiplexers (`MUX`). A full suite of tests demonstrates functionality of each of the modules, showing waveform outputs for each of the VCO outputs and demonstrating basic exponential FM and linear AM.
 
 This project owes a giant technical debt to Andrew Belt's `VCVRack` project. Although the architecture is different, it served as an inspiration throughout the development process.
 
@@ -12,7 +12,7 @@ This project owes a giant technical debt to Andrew Belt's `VCVRack` project. Alt
 
 To build, clone the repository and run `make all`. This will yield a binary file, `egress`, that will continually generate output in real time until interrupted by the user with any keyboard input. 
 
-This build has been tested only on MacOS 11.2 using the `llvm`m compiler. Tests can be built using `make debug`. This will yield a program that prints values to `stdout` for a single buffer length before exiting.
+This build has been tested only on MacOS 11.2 using the `llvm` compiler. Tests can be built using `make debug`. This will yield a program that prints values to `stdout` for a single buffer length before exiting.
 
 ## Rack
 
@@ -78,6 +78,10 @@ Amplitude modulation was tested with a base frequency of 1000hz and a modulation
 #### Constant value
 
 `CONST` takes no inputs. It can be used to provide an offset value -- i.e., for changing an FM modulation index.
+
+
+### DELAY
+#### Under development
 
 ## Testing
 

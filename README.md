@@ -63,6 +63,8 @@ Amplitude modulation was tested with a base frequency of 1000hz and a modulation
 
 `MUX` takes three inputs, `IN1`, `IN2`, and `CTRL`. The input presented at `OUT1` is chosen based on the polarity of the control signal.
 
+`MUX` was tested by generating three waveforms, one at 1000hz, one at 2000hz, and a third at 100hz. The third waveform was used as the control input to switch between the two outputs.
+
 ![MUX](./img/testmux.png)
 
 

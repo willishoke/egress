@@ -8,6 +8,12 @@
 
 This project owes a giant technical debt to Andrew Belt's `VCVRack` project. Although the architecture is different, it served as an inspiration throughout the development process.
 
+## Build
+
+To build, clone the repository and run `make all`. This will yield a binary file, `egress`, that will continually generate output in real time until interrupted by the user with any keyboard input. 
+
+This build has been tested only on MacOS 11.2 using the `llvm`m compiler. Tests can be built using `make debug`. This will yield a program that prints values to `stdout` for a single buffer length before exiting.
+
 ## Rack
 
 `Rack` is responsible for storing modules and managing connections between them. It also manages mixing and stores the output buffer. Racks store modules using an associative map with a unique name as key and `unique_ptr` to a module object as value. This allows for efficient lookup and constant-time iteration through the module list. Connections are stored using an associative map, with an output module's name and output ID as keys and module name and input ID as values. `Rack` has a `process` method that will iterate through the computation graph, sending output values from one module to another. It then calls each module's `process` method and stores this value in the output buffer. Since the buffer updates occur sequentially, the connection latency between any two modules is only a single sample. 
@@ -79,7 +85,7 @@ Tests can be compiled with `make debug`. The `test` directory contains Python sc
 
 ## Next Steps
 
-Several methods are still incomplete, including those to remove modules or connections. More validation checks should be added to ensure module names are valid, etc. While the syntax for declaring modules is fairly terse, it doesn't seem right to have the caller be managing memory. This should probably be accomplished by factory functions in the Rack class.
+Several methods are still incomplete, including those to remove modules or connections. More validation checks should be added to ensure module names are valid, etc. While the syntax for declaring modules is fairly terse, it doesn't seem right to have the caller be managing memory. This should probably be accomplished by factory functions in the Rack class. Better test automation would be nice -- should be able to write a script to run all tests sequentially.
  
 It would be worthwhile to test alternative implementations for storing modules and their connections. Even just using vectors might end up being more efficient due to the linear memory layout. This libarary lacks any front end implementation, but it would be relatively straightforward to augment it with a simple parser to process user input for interactive use.
 

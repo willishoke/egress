@@ -55,7 +55,7 @@ FM was tested with a base freqency of 1000hz, a modulation frequency of 200hz, a
 
 Amplitude modulation was tested with a base frequency of 1000hz and a modulation frequency of 200hz at 2048 samples.
 
-![vca](./img/testfm.png)
+![vca](./img/testam.png)
 
 
 ### MUX

@@ -9,6 +9,6 @@ testname = sys.argv[2]
 data = np.genfromtxt(fname, delimiter=',')[:-1] 
 
 plt.figure(figsize=(12,3))
-plt.plot(data)
-plt.title(testname + "output waveform: " + str(len(data)) + " samples")
+plt.plot(data, linewidth=.5)
+plt.title(testname + " output waveform: " + str(len(data)) + " samples")
 plt.show()

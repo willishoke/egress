@@ -14,7 +14,6 @@ using mPtr = std::unique_ptr<Module>;
 /*
  * Rack is a manager class which stores a collection of modules 
  * and marshals connections between them
- * 
  */
 
 class Rack

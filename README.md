@@ -4,7 +4,7 @@
 
 ## Intro
 
-`egress` is a an object-oriented C++ library for building realtime emulations of analog synthesizers. It is built to be lean, efficient, and portable, although it is currently only tested on MacOS. No external libraries are required. Sample implementations are provided for voltage controlled oscillators (`VCO`), four-quadrant multipliers (`VCA`), and two-way analog multiplexers (`MUX`). A full suite of tests demonstrates functionality of each of the modules, showing waveform outputs for each of the VCO outputs and demonstrating basic exponential FM and linear AM.
+`egress` is a an object-oriented C++ library for building realtime emulations of analog synthesizers. It is built to be lean, efficient, and portable, although it is currently only tested on MacOS. No external libraries are required. Sample rates down to 64 samples / second have been tested. Sample implementations are provided for voltage controlled oscillators (`VCO`), four-quadrant multipliers (`VCA`), and two-way analog multiplexers (`MUX`). A full suite of tests demonstrates functionality of each of the modules, showing waveform outputs for each of the VCO outputs and demonstrating basic exponential FM and linear AM.
 
 This project owes a giant technical debt to Andrew Belt's `VCVRack` project. Although the architecture is different, it served as an inspiration throughout the development process.
 
@@ -19,18 +19,52 @@ This project owes a giant technical debt to Andrew Belt's `VCVRack` project. Alt
 ### VCO
 #### A voltage controlled saw-core FM oscillator
 
-`VCO` is a standard oscillator, with outputs for `saw`, `tri`, `sin`, and `sqr` waves. The oscillator follows the typical 1V / octave standard, so a value of `1.0` present at the `FM` input will result in a tone exactly 1 octave above the fundamental. An optional `FM_INDEX` parameter allows dynamic scaling of FM values. The constructor for `VCO` takes a single value specifying the intial frequency. 
+`VCO` is a standard oscillator, with outputs for `saw`, `tri`, `sin`, and `sqr` waves. The oscillator follows the typical 1V / octave standard, so a value of `1.0` present at the `FM` input will result in a tone exactly 1 octave above the fundamental. An optional `FM_INDEX` parameter allows dynamic scaling of FM values. The constructor for `VCO` takes a single value specifying the intial frequency. All tests were run with a wave at 440hz for 2048 samples.
 
 Inputs: `FM`, `FM_INDEX`
 
-Outputs: `SIN`, `SQR`, `SAW`, and `TRI`
+Outputs: 
 
-![waveforms](./output_waveforms.png)
+`SIN`
+
+![sine](./img/testsin.png)
+
+`SQR`
+
+![square](./img/testsqr.png)
+
+`SAW`
+
+![sawtooth](./img/testsaw.png)
+
+`TRI`
+
+![triangle](./img/testtri.png)
+
+#### Frequency Modulation
+
+FM was tested with a base freqency of 1000hz, a modulation frequency of 200hz, and an FM index of 3.
+
+![fm](./img/testfm.png)
+
 
 ### VCA
 #### Voltage controlled amplifier
 
 `VCA` takes two inputs, `IN1` and `IN2`, and outputs `OUT`. The output voltage is downscaled by a factor of 5 to accomodate +/-5V control signals.
+
+Amplitude modulation was tested with a base frequency of 1000hz and a modulation frequency of 200hz at 2048 samples.
+
+![vca](./img/testfm.png)
+
+
+### MUX
+#### Voltage controlled analog multiplexer
+
+`MUX` takes three inputs, `IN1`, `IN2`, and `CTRL`. The input presented at `OUT1` is chosen based on the polarity of the control signal.
+
+![MUX](./img/testmux.png)
+
 
 ### CONST
 #### Constant value
@@ -39,10 +73,14 @@ Outputs: `SIN`, `SQR`, `SAW`, and `TRI`
 
 ## Testing
 
-Tests can be compiled with `make test`. Different tests can be specified using `#define <testname>` in `Test.cpp`. The `test` directory contains Python scripts for visualizing test outputs.
+Tests can be compiled with `make debug`. The `test` directory contains Python scripts for visualizing test outputs.
 
 ## Next Steps
 
 Several methods are still incomplete, including those to remove modules or connections. More validation checks should be added to ensure module names are valid, etc. While the syntax for declaring modules is fairly terse, it doesn't seem right to have the caller be managing memory. This should probably be accomplished by factory functions in the Rack class.
  
 It would be worthwhile to test alternative implementations for storing modules and their connections. Even just using vectors might end up being more efficient due to the linear memory layout. This libarary lacks any front end implementation, but it would be relatively straightforward to augment it with a simple parser to process user input for interactive use.
+
+## License
+
+Free use of `egress` is permitted under the terms of the MIT License.

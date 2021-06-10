@@ -133,7 +133,7 @@ class MUX : public Module
     void process() 
     {
       // route input depending on polarity of control signal
-      outputs[OUT] = inputs[CTRL] > 0.0 ? IN1 : IN2;
+      outputs[OUT] = inputs[CTRL] > 0.0 ? inputs[IN1] : inputs[IN2];
 
       // invoke postprocessing routine
       Module::postprocess();

@@ -63,8 +63,74 @@ void closeStream(RtAudio & dac)
   }
 }
 
+void SQR_test(Rack & rack)
+{
+  rack.addModule("vco1", std::make_unique<VCO>(440));
+
+  rack.addOutput(std::make_pair("vco1", VCO::SQR));
+}
+
+void SIN_test(Rack & rack)
+{
+  rack.addModule("vco1", std::make_unique<VCO>(440));
+
+  rack.addOutput(std::make_pair("vco1", VCO::SIN));
+}
+
+void TRI_test(Rack & rack)
+{
+  rack.addModule("vco1", std::make_unique<VCO>(440));
+
+  rack.addOutput(std::make_pair("vco1", VCO::TRI));
+}
+
+void SAW_test(Rack & rack)
+{
+  rack.addModule("vco1", std::make_unique<VCO>(440));
+
+  rack.addOutput(std::make_pair("vco1", VCO::SAW));
+}
+
+void AM_test(Rack & rack)
+{
+  rack.addModule("vco1", std::make_unique<VCO>(1000));
+  rack.addModule("vco2", std::make_unique<VCO>(200));
+  rack.addModule("vca1", std::make_unique<VCA>());
+
+  rack.connect("vco1", VCO::SIN, "vca1", VCA::IN1);
+  rack.connect("vco2", VCO::SIN, "vca1", VCA::IN2);
+  
+  rack.addOutput(std::make_pair("vca1", VCA::OUT));
+}
+
+void MUX_test(Rack & rack)
+{
+  rack.addModule("vco1", std::make_unique<VCO>(1000));
+  rack.addModule("vco2", std::make_unique<VCO>(2000));
+  rack.addModule("lfo1", std::make_unique<VCO>(100));
+  rack.addModule("mux1", std::make_unique<MUX>());
+
+  rack.connect("vco1", VCO::SIN, "mux1", MUX::IN1);
+  rack.connect("vco2", VCO::SIN, "mux1", MUX::IN2);
+  rack.connect("lfo1", VCO::SIN, "mux1", MUX::CTRL);
+  
+  rack.addOutput(std::make_pair("mux1", MUX::OUT));
+}
+
+void FM_test(Rack & rack)
+{
+  rack.addModule("vco1", std::make_unique<VCO>(1000));
+  rack.addModule("vco2", std::make_unique<VCO>(200));
+  rack.addModule("c1", std::make_unique<CONST>(3));
+
+  rack.connect("vco2", VCO::SIN, "vco1", VCO::FM);
+  rack.connect("c1", CONST::OUT, "vco1", VCO::FM_INDEX);
+  
+  rack.addOutput(std::make_pair("vco1", VCO::SIN));
+}
+
 /*
- *
+ * Patch with chaotic behavior
  */
 void FM_chaos(Rack & rack)
 {
@@ -97,8 +163,14 @@ int main(int argc, char * argv[])
 
   Rack rack(bufferFrames);
 
+  //SQR_test(rack);
+  //SAW_test(rack);
+  //SIN_test(rack);
+  //TRI_test(rack);
+  //FM_test(rack);
+  //AM_test(rack);
+  //MUX_test(rack);
   FM_chaos(rack);
-
   // Fill single buffer, output to stdout
   rack.process();
 

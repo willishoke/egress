@@ -168,9 +168,9 @@ int main(int argc, char * argv[])
   //SIN_test(rack);
   //TRI_test(rack);
   //FM_test(rack);
-  //AM_test(rack);
+  AM_test(rack);
   //MUX_test(rack);
-  FM_chaos(rack);
+  //FM_chaos(rack);
   // Fill single buffer, output to stdout
   rack.process();
 

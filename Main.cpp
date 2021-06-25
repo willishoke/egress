@@ -35,11 +35,16 @@ int fillBuffer
   r->process();
 
   // write interleaved audio data
-  for (auto i = 0; i < nBufferFrames; ++i) 
+  for (unsigned int i = 0; i < nBufferFrames; ++i) 
   {
     for (auto j = 0; j < 2; j++) 
     {
-      *buffer++ = r->outputBuffer.at(i);
+      try {
+        *buffer++ = r->outputBuffer.at(i);
+      }
+      catch (...) {
+        std::cout << "buffer issue" << std::endl;
+      }
     }
   }
   return 0;
@@ -76,7 +81,7 @@ int main()
   parameters.nChannels = 2;
   parameters.firstChannel = 0;
   unsigned int sampleRate = 44100;
-  unsigned int bufferFrames = 512;  
+  unsigned int bufferFrames = 1024;  
   Rack rack(bufferFrames);
   mPtr vco = std::make_unique<VCO>(440);
   mPtr vco2 = std::make_unique<VCO>(20);

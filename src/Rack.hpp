@@ -29,7 +29,7 @@ class Rack
     void process()
     {
       // fill entire output buffer!
-      for (auto i = 0; i < bufferLength; ++i)
+      for (unsigned int i = 0; i < bufferLength; ++i)
       {
         // propogate previous values through graph
         for (const auto & [from, to] : connections) 

@@ -8,10 +8,11 @@ class Module
   public:
     virtual ~Module() {}
 
-    Module(int in_size, int out_size)
+    Module(unsigned int inSize, unsigned int outSize)
     {
-      inputs.resize(in_size);
-      outputs.resize(out_size);
+      this->inputs.resize(inSize);
+      this->outputs.resize(outSize);
+
     }
 
     virtual void process() = 0;
@@ -36,6 +37,7 @@ class Module
   protected:
     std::vector<Signal> inputs;
     std::vector<Signal> outputs;
+    unsigned int sampleRate;
 
   private:
     friend class Rack;
@@ -169,6 +171,103 @@ class VCA : public Module
       // clean up
       Module::postprocess();
     }
+};
+
+class ENV: public Module
+{
+  public:
+    ENV(double rise, double fall) : 
+      Module(IN_COUNT, OUT_COUNT)
+    {
+      this->rise = rise;
+      this->fall = fall;
+      
+      // initialize core value to 0
+      this->core = 0.0;
+
+      // module remains idle until positive value appears at TRIG
+      this->stage = ENV::Stage::IDLE;
+    }
+
+    enum Ins
+    {
+      TRIG,
+      RISE,
+      FALL,
+      IN_COUNT
+    };
+  
+    enum Outs
+    {
+      OUT,
+      OUT_COUNT
+    };
+
+    void process() 
+    {
+      if (this->stage == ENV::Stage::IDLE)
+      {
+        if (this->inputs[TRIG] >= 0.0)
+        {
+          // update stage tag
+          this->stage = ENV::Stage::RISING;
+
+          // need to calculate frequency from wavelength
+          double step = 1.0 / (this->rise * 44.1);
+
+          // increment core value
+          this->core += step;
+        }
+      }
+
+      else if (this->stage == ENV::Stage::RISING)
+      {
+        // need to calculate frequency from wavelength
+        double step = 1.0 / (this->rise * 44.1);
+
+        // increment core value
+        this->core += step;
+
+        if (this->core >= 1.0)
+        {
+          this->core = 1.0;
+          this->stage = ENV::Stage::FALLING;
+        } 
+      }
+
+      else if (this->stage == ENV::Stage::FALLING)
+      {
+        // need to calculate frequency from wavelength
+        double step = 1.0 / (this->fall * 44.1);
+
+        // increment core value
+        this->core -= step;
+
+        if (this->core <= 0.0)
+        {
+          this->core = 0.0;
+          this->stage = ENV::Stage::IDLE;
+        }
+      }
+
+      // update output value
+      outputs[OUT] = 5.0 * this->core;
+
+      // clean up
+      Module::postprocess();
+    }
+
+  private:
+    enum class Stage
+    {
+      IDLE,     // Module is waiting for trigger
+      RISING,   // Module is in rise phase
+      FALLING,  // Module is in fall phase
+    } stage;
+
+    double rise; // Value in milliseconds
+    double fall;  // Value in milliseconds
+    double core;   // Value in range [0.0, 5.0]
 };
 
 class DELAY : public Module

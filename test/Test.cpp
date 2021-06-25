@@ -129,6 +129,16 @@ void FM_test(Rack & rack)
   rack.addOutput(std::make_pair("vco1", VCO::SIN));
 }
 
+void ENV_test(Rack & rack)
+{
+  rack.addModule("env1", std::make_unique<ENV>(1, 5));
+  rack.addModule("lfo1", std::make_unique<VCO>(200));
+
+  rack.connect("lfo1", VCO::SQR, "env1", ENV::TRIG);
+
+  rack.addOutput(std::make_pair("env1", ENV::OUT));
+}
+
 /*
  * Patch with chaotic behavior
  */
@@ -168,10 +178,11 @@ int main(int argc, char * argv[])
   //SIN_test(rack);
   //TRI_test(rack);
   //FM_test(rack);
-  AM_test(rack);
+  //AM_test(rack);
   //MUX_test(rack);
   //FM_chaos(rack);
   // Fill single buffer, output to stdout
+  ENV_test(rack);
   rack.process();
 
   return 0;

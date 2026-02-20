@@ -4,7 +4,7 @@
  * * * * * * * *
  */
 
-#include "lib/RtAudio.h"
+#include "RtAudio.h"
 #include "src/Rack.hpp"
 #include <curses.h>
 #include <iostream>
@@ -52,15 +52,7 @@ int fillBuffer
 
 void closeStream(RtAudio & dac)
 {
-  try 
-  {
-    dac.stopStream();
-  }
-
-  catch (RtAudioError& e) 
-  {
-    e.printMessage();
-  }
+  dac.stopStream();
 
   if (dac.isStreamOpen()) 
   {
@@ -68,9 +60,14 @@ void closeStream(RtAudio & dac)
   }
 }
 
+auto errorCallback = [](RtAudioErrorType type, const std::string& errorText) {
+    std::cerr << "RtAudio error: " << errorText << std::endl;
+    exit(0);
+};
+
 int main()
 {
-  RtAudio dac;
+  RtAudio dac(RtAudio::UNSPECIFIED, errorCallback);
   if (dac.getDeviceCount() < 1) 
   {
     std::cout << "\nNo audio devices found!\n";
@@ -90,25 +87,25 @@ int main()
   rack.connect("vco2", VCO::SIN, "vco", VCO::FM);
   rack.addOutput(std::make_pair("vco", VCO::SIN));
 
-  try 
-  {
-    dac.openStream
-      ( &parameters, 
-        NULL, 
-        RTAUDIO_FLOAT64,
-        sampleRate, 
-        &bufferFrames, 
-        &fillBuffer, 
-        (void*) &rack
-      );
-    dac.startStream();
+  RtAudioErrorType err = dac.openStream
+    ( &parameters, 
+      NULL, 
+      RTAUDIO_FLOAT64,
+      sampleRate, 
+      &bufferFrames, 
+      &fillBuffer, 
+      (void*) &rack
+    );
+
+  if (err != RTAUDIO_NO_ERROR) {
+    std::cerr << dac.getErrorText() << std::endl;
   }
 
-  catch (RtAudioError& e) 
-  {
-    e.printMessage();
-    exit(0);
+  RtAudioErrorType startErr = dac.startStream();
+  if (err != RTAUDIO_NO_ERROR) {
+    std::cerr << dac.getErrorText() << std::endl;
   }
+
   initscr();
   getch();
   endwin();

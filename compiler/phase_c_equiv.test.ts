@@ -234,15 +234,6 @@ function emptySession() {
   }
 }
 
-/** Programs whose legacy bounds depend on the discarded surface-alias
- *  name. Skipped with an explicit reason; revisit when the elaborator
- *  preserves the bounds metadata (a follow-up to C2, not a hard
- *  prerequisite for any later strata phase). */
-const SURFACE_BOUNDS_DIVERGENT = new Set([
-  'CombDelay',  // input/output: signal → bounds [-1, 1] dropped
-  'CrossFade',  // a, b: signal; mix: unipolar → all bounds dropped
-])
-
 /** Generic programs that legacy stashes as templates (no ProgramDef
  *  produced until specialization). Byte-equality requires running
  *  Phase C3 specialize first; skipped until then. */
@@ -268,14 +259,8 @@ describe('phase C dual-run byte-equality (Phase C2)', () => {
         return
       }
 
-      // Filter 2: divergences flagged above stay skipped with reason.
-      if (SURFACE_BOUNDS_DIVERGENT.has(fx.name)) {
-        // TODO: re-enable once the elaborator preserves builtin alias
-        // bounds (signal/freq/unipolar/bipolar).
-        return
-      }
+      // Filter 2: generics deferred until C3 specialize lands.
       if (GENERIC_DEFERRED.has(fx.name)) {
-        // TODO: re-enable post Phase C3 (specialize on the graph IR).
         return
       }
 

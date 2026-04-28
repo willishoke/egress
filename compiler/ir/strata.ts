@@ -18,11 +18,14 @@
  */
 
 import type { ResolvedProgram, TypeParamDecl } from './nodes.js'
+import type { SessionState } from '../session.js'
+import type { ProgramType } from '../program_types.js'
 import { specializeProgram } from './specialize.js'
 import { sumLower } from './sum_lower.js'
 import { traceCycles } from './trace_cycles.js'
 import { inlineInstances } from './inline_instances.js'
 import { arrayLower } from './array_lower.js'
+import { loadProgramDefFromResolved } from './load.js'
 
 export function strataPipeline(
   prog: ResolvedProgram,
@@ -33,4 +36,23 @@ export function strataPipeline(
   const cyclic = traceCycles(summed)
   const inlined = inlineInstances(cyclic)
   return arrayLower(inlined)
+}
+
+/** Compile a `ResolvedProgram` end-to-end through the strata pipeline,
+ *  yielding a `ProgramType` (wrapping a slot-indexed `ProgramDef`) that the
+ *  legacy `flatten.ts` consumes unchanged. The new pipeline produces a flat
+ *  `ProgramDef` (no `nestedCalls`) — `flatten.ts` skips its nested-call
+ *  branch when `nestedCalls.length === 0`, so no flatten changes are
+ *  required. */
+export function compileResolvedToProgramDef(
+  prog: ResolvedProgram,
+  typeArgs: ReadonlyMap<TypeParamDecl, number>,
+  session: Pick<
+    SessionState,
+    'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'
+    | 'specializationCache' | 'genericTemplates'
+  > & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver'>>,
+): ProgramType {
+  const lowered = strataPipeline(prog, typeArgs)
+  return loadProgramDefFromResolved(lowered, session)
 }

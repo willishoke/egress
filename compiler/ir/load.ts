@@ -125,11 +125,17 @@ export function loadProgramDefFromResolved(
   // Re-shape the per-register port type for `zeros{N}` initialisers
   // (legacy overrides the type for the array case even when the user
   // didn't declare one). Done in lockstep with regInitValue above.
+  // After Phase C6 (arrayLower) runs, `zeros{N}` with a numeric literal
+  // count has been unrolled into a bare array literal — match both the
+  // pre- and post-lowering shapes here so the port type lifts in either
+  // case.
   for (let i = 0; i < regDecls.length; i++) {
     const init = regDecls[i].init
     if (isZerosInit(init)) {
       const n = zerosCount(init)
       registerPortTypes[i] = ArrayType(Float, [n])
+    } else if (Array.isArray(init)) {
+      registerPortTypes[i] = ArrayType(Float, [init.length])
     }
   }
 
@@ -143,7 +149,14 @@ export function loadProgramDefFromResolved(
   })
 
   // ── Lower each reachable expression ──
-  const lower = (e: ResolvedExpr) => resolvedToSlotted(e, slots)
+  // Single memo across all roots so shared subtrees in the resolved graph
+  // (e.g. a `let` binding used in both the output and a register update,
+  // or a binder appearing multiple times within one expression) emit a
+  // single ExprNode object. emit_numeric uses identity to deduplicate
+  // instructions; without memoization, structurally-equal-but-distinct
+  // ExprNode objects emit duplicate instructions per use.
+  const memo = new WeakMap<object, ExprNode>()
+  const lower = (e: ResolvedExpr) => resolvedToSlotted(e, slots, memo)
 
   // The 'dac' boundary leaf is a top-level patch concern; not produced
   // by stdlib programs. Skip it here — a stdlib's outputs map directly
@@ -243,15 +256,29 @@ export function loadProgramDefFromResolved(
  * `var`, etc. — see `compiler/parse/lower.ts` for the canonical
  * legacy form).
  */
-export function resolvedToSlotted(expr: ResolvedExpr, slots: Slots): ExprNode {
+export function resolvedToSlotted(expr: ResolvedExpr, slots: Slots, memo?: WeakMap<object, ExprNode>): ExprNode {
   if (typeof expr === 'number')  return expr
   if (typeof expr === 'boolean') return expr
-  if (Array.isArray(expr))       return expr.map(e => resolvedToSlotted(e, slots))
-  return opNodeToSlotted(expr, slots)
+  if (Array.isArray(expr)) {
+    if (memo) {
+      const cached = memo.get(expr)
+      if (cached !== undefined) return cached
+    }
+    const out = expr.map(e => resolvedToSlotted(e, slots, memo))
+    if (memo) memo.set(expr, out)
+    return out
+  }
+  if (memo) {
+    const cached = memo.get(expr)
+    if (cached !== undefined) return cached
+  }
+  const out = opNodeToSlotted(expr, slots, memo)
+  if (memo) memo.set(expr, out)
+  return out
 }
 
-function opNodeToSlotted(node: ResolvedExprOpNode, slots: Slots): ExprNode {
-  const recur = (e: ResolvedExpr) => resolvedToSlotted(e, slots)
+function opNodeToSlotted(node: ResolvedExprOpNode, slots: Slots, memo?: WeakMap<object, ExprNode>): ExprNode {
+  const recur = (e: ResolvedExpr) => resolvedToSlotted(e, slots, memo)
 
   switch (node.op) {
     // ── References → slot-indexed legacy refs ──

@@ -24,6 +24,9 @@ import {
   Float, Int, Bool, Unit, ArrayType, StructType, SumType,
 } from './term.js'
 import { expandSumTypes } from './sum_lowering.js'
+import { useNewPipeline } from './feature_flags.js'
+import { compileResolvedToProgramDef } from './ir/strata.js'
+import type { ResolvedProgram, TypeParamDecl } from './ir/nodes.js'
 
 // ─────────────────────────────────────────────────────────────
 // JSON schema types
@@ -100,6 +103,12 @@ export interface SessionState {
   /** ProgramNode templates for generic programs (pre-specialization). Keyed by type name.
    *  Only populated for programs declaring type_params. */
   genericTemplates: Map<string, import('./program.js').ProgramNode>
+  /** Phase C7: ResolvedProgram templates for generic programs under the
+   *  new pipeline. When `useNewPipeline()` is true, this map mirrors
+   *  `genericTemplates` but holds graph-IR templates that get specialized
+   *  via `specializeProgram` (C3) at instantiation time. Empty under the
+   *  legacy path. */
+  genericTemplatesResolved: Map<string, import('./ir/nodes.js').ResolvedProgram>
   /** Name counter for auto-generated instance names. */
   _nameCounters: Map<string, number>
 }
@@ -120,6 +129,7 @@ export function makeSession(bufferLength = 512): SessionState {
     inputExprNodes: new Map(),
     specializationCache: new Map(),
     genericTemplates: new Map(),
+    genericTemplatesResolved: new Map(),
     runtime,
     graph: {
       primeJit: () => {},
@@ -322,7 +332,7 @@ export function resolveBounds(
 // ─────────────────────────────────────────────────────────────
 
 type ResolveSession = Pick<SessionState, 'typeRegistry' | 'specializationCache' | 'genericTemplates' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'> &
-  Partial<Pick<SessionState, 'typeResolver' | 'typeAliasRegistry'>>
+  Partial<Pick<SessionState, 'typeResolver' | 'typeAliasRegistry' | 'genericTemplatesResolved'>>
 
 /**
  * Resolve a (baseName, type_args) pair to a concrete ProgramType.
@@ -347,6 +357,42 @@ export function resolveProgramType(
     return { type, typeArgs: resolved }
   }
 
+  const specializeFromResolvedTemplate = (template: ResolvedProgram) => {
+    // Mirror the legacy `type_params` shape that resolveTypeArgs expects.
+    const typeParamsByName: Record<string, { type: 'int'; default?: number }> = {}
+    for (const tp of template.typeParams) {
+      const entry: { type: 'int'; default?: number } = { type: 'int' }
+      if (tp.default !== undefined) entry.default = tp.default
+      typeParamsByName[tp.name] = entry
+    }
+    const resolved = resolveTypeArgs(rawTypeArgs, outerArgs, typeParamsByName, `instance of '${baseName}'`)
+    const key = specializationCacheKey(baseName, resolved)
+    const cached = session.specializationCache.get(key)
+    if (cached) return { type: cached, typeArgs: resolved }
+    // Build the TypeParamDecl-keyed substitution map expected by specializeProgram.
+    const subst = new Map<TypeParamDecl, number>()
+    for (const [name, value] of Object.entries(resolved)) {
+      const decl = template.typeParams.find(p => p.name === name)
+      if (!decl) {
+        throw new Error(`resolveProgramType: unknown type-param '${name}' on '${baseName}'`)
+      }
+      subst.set(decl, value)
+    }
+    const type = compileResolvedToProgramDef(template, subst, session)
+    type._def.typeName = key
+    session.specializationCache.set(key, type)
+    return { type, typeArgs: resolved }
+  }
+
+  // Phase C7: when the new pipeline is active, generics may live in
+  // genericTemplatesResolved rather than genericTemplates. Check both,
+  // preferring the resolved form when present so the new pipeline's
+  // specializeProgram (C3) handles substitution.
+  if (useNewPipeline()) {
+    const resolvedTemplate = session.genericTemplatesResolved?.get(baseName)
+    if (resolvedTemplate) return specializeFromResolvedTemplate(resolvedTemplate)
+  }
+
   const template = session.genericTemplates.get(baseName)
   if (template) return specializeFromTemplate(template)
 
@@ -355,6 +401,10 @@ export function resolveProgramType(
   // genericTemplates after the resolver fires so the lazy-load path works.
   const concrete = session.typeRegistry.get(baseName) ?? session.typeResolver?.(baseName)
   if (concrete === undefined) {
+    if (useNewPipeline()) {
+      const lateResolved = session.genericTemplatesResolved?.get(baseName)
+      if (lateResolved) return specializeFromResolvedTemplate(lateResolved)
+    }
     const lateTemplate = session.genericTemplates.get(baseName)
     if (lateTemplate) return specializeFromTemplate(lateTemplate)
   }
@@ -362,6 +412,7 @@ export function resolveProgramType(
     const known = [
       ...session.typeRegistry.keys(),
       ...session.genericTemplates.keys(),
+      ...(session.genericTemplatesResolved?.keys() ?? []),
     ].join(', ')
     throw new Error(`Unknown program type '${baseName}'. Known: ${known || '(none)'}`)
   }

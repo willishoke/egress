@@ -1,29 +1,30 @@
 /**
- * Session state, expression pretty-printer, JSON loading, and ProgramNode → ProgramDef builder.
+ * Session state, expression pretty-printer, JSON loading, and generic-program
+ * resolution. The strata pipeline (compiler/ir/) handles ProgramNode →
+ * ResolvedProgram → ProgramDef; this module owns the session-state shell
+ * and the small library of port-type / bounds utilities used by both
+ * strata and pretty-printing.
  */
 
-import {
-  type SignalExpr, type ExprCoercible, coerce, type ExprNode, type ExprOpNodeStrict, validateExpr,
-} from './expr.js'
-import { mapChildren } from './walk.js'
+import { type ExprNode } from './expr.js'
 import {
   ProgramType, ProgramInstance,
-  type ProgramDef, type NestedCall, type ValueCoercible, type Bounds,
+  type Bounds,
 } from './program_types.js'
 import { Runtime } from './runtime/runtime.js'
-import { loadProgramAsSession, type PortTypeDecl, type ProgramNode, type ProgramPortSpec, type ProgramTopLevel } from './program.js'
-import { expandDeclGenerators } from './lower_arrays.js'
+import { loadProgramAsSession, type PortTypeDecl, type ProgramNode, type ProgramTopLevel } from './program.js'
 import { parseProgramV2 } from './schema.js'
 import { Param, Trigger } from './runtime/param.js'
 import {
-  specializeProgramNode, specializationCacheKey, resolveTypeArgs,
+  specializationCacheKey, resolveTypeArgs,
   type RawTypeArgs, type ResolvedTypeArgs,
 } from './specialize.js'
 import {
   type PortType, type ScalarKind, type SumTypeMeta,
   Float, Int, Bool, Unit, ArrayType, StructType, SumType,
 } from './term.js'
-import { expandSumTypes } from './sum_lowering.js'
+import { compileResolvedToProgramDef } from './ir/strata.js'
+import type { TypeParamDecl } from './ir/nodes.js'
 
 // ─────────────────────────────────────────────────────────────
 // JSON schema types
@@ -31,8 +32,6 @@ import { expandSumTypes } from './sum_lowering.js'
 
 // ExprNode is defined in expr.ts and re-exported here for backward compatibility.
 export type { ExprNode } from './expr.js'
-
-
 
 export interface TypeDefFieldJSON {
   name: string
@@ -97,9 +96,18 @@ export interface SessionState {
   typeResolver?: (name: string) => ProgramType | undefined
   /** Monomorphized specializations of generic programs, keyed by `Type<k1=v1,k2=v2>`. */
   specializationCache: Map<string, ProgramType>
-  /** ProgramNode templates for generic programs (pre-specialization). Keyed by type name.
-   *  Only populated for programs declaring type_params. */
-  genericTemplates: Map<string, import('./program.js').ProgramNode>
+  /** ResolvedProgram templates for generic programs. Keyed by type name.
+   *  Only populated for programs declaring type_params. The strata pipeline's
+   *  `specializeProgram` consumes these at instantiation time, producing a
+   *  fresh `ProgramType` per (template, type-args) pair via the
+   *  specialization cache. */
+  genericTemplatesResolved: Map<string, import('./ir/nodes.js').ResolvedProgram>
+  /** Pre-strata `ResolvedProgram` for every non-generic registered type,
+   *  keyed by type name. The elaborator consults this when an inline
+   *  `instanceDecl` references a previously registered sibling — without
+   *  it, follow-up `define_program` calls couldn't resolve cross-program
+   *  references. Generic templates live in `genericTemplatesResolved`. */
+  resolvedRegistry: Map<string, import('./ir/nodes.js').ResolvedProgram>
   /** Name counter for auto-generated instance names. */
   _nameCounters: Map<string, number>
 }
@@ -119,7 +127,8 @@ export function makeSession(bufferLength = 512): SessionState {
     triggerRegistry: new Map(),
     inputExprNodes: new Map(),
     specializationCache: new Map(),
-    genericTemplates: new Map(),
+    genericTemplatesResolved: new Map(),
+    resolvedRegistry: new Map(),
     runtime,
     graph: {
       primeJit: () => {},
@@ -151,79 +160,6 @@ const BINARY_OPS = new Set([
 const UNARY_OPS = new Set([
   'neg', 'abs', 'sin', 'cos', 'exp', 'log', 'tanh', 'not', 'bitNot',
 ])
-
-// ─────────────────────────────────────────────────────────────
-// Module loader
-// ─────────────────────────────────────────────────────────────
-// Module loader
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Convert a name-based JSON ExprNode to a slot-based ExprNode.
- * Pure tree walk — no side effects, no context stack.
- */
-function slottifyExpr(
-  node: ExprNode,
-  inputNames: string[],
-  regNames: string[],
-  delayNameToId: Map<string, number>,
-  nestedAliasToId: Map<string, number>,
-  nestedAliasDef: Map<string, ProgramDef>,
-): ExprNode {
-  if (typeof node === 'number' || typeof node === 'boolean') return node
-  if (Array.isArray(node)) return node.map(n => slottifyExpr(n, inputNames, regNames, delayNameToId, nestedAliasToId, nestedAliasDef))
-
-  const obj = node as Record<string, unknown>
-  const op = obj.op as string
-  const recurse = (n: ExprNode) => slottifyExpr(n, inputNames, regNames, delayNameToId, nestedAliasToId, nestedAliasDef)
-
-  if (op === 'input') {
-    const name = obj.name as string | undefined
-    if (name !== undefined) {
-      const id = inputNames.indexOf(name)
-      if (id === -1) throw new Error(`Unknown input '${name}'. Available: ${inputNames.join(', ')}`)
-      return { op: 'input', id }
-    }
-    return node // already slot-based
-  }
-
-  if (op === 'reg') {
-    const name = obj.name as string | undefined
-    if (name !== undefined) {
-      const id = regNames.indexOf(name)
-      if (id === -1) throw new Error(`Unknown register '${name}'. Available: ${regNames.join(', ')}`)
-      return { op: 'reg', id }
-    }
-    return node
-  }
-
-  if (op === 'delayRef') {
-    const id = obj.id as string
-    const nodeId = delayNameToId.get(id)
-    if (nodeId === undefined) throw new Error(`delay_ref: no delay with id '${id}'.`)
-    return { op: 'delayValue', node_id: nodeId }
-  }
-
-  if (op === 'nestedOut') {
-    const ref = obj.ref as string
-    const nodeId = nestedAliasToId.get(ref)
-    if (nodeId === undefined) throw new Error(`nested_out: no nested program named '${ref}'.`)
-    const nestedDef = nestedAliasDef.get(ref)!
-    const output = obj.output as string | number
-    const outputId = typeof output === 'number' ? output : nestedDef.outputNames.indexOf(output)
-    if (outputId === -1) throw new Error(`nested_out: unknown output '${output}' on '${ref}'.`)
-    return { op: 'nestedOutput', node_id: nodeId, output_id: outputId }
-  }
-
-  // Everything else — generic recursion via shared mapChildren.
-  // The per-op intercepts above handle the leaf-name → slot-id rewrites;
-  // mapChildren takes care of the structural traversal for every op kind
-  // (args, named children, payload values, match arms, etc.).
-  return mapChildren(obj as unknown as ExprOpNodeStrict, recurse) as unknown as ExprNode
-
-  // Leaf ops (sample_rate, sample_index, binding, float, int, bool, matrix, etc.)
-  return node
-}
 
 // ─────────────────────────────────────────────────────────────
 // Bounded type aliases
@@ -321,13 +257,17 @@ export function resolveBounds(
 // Generic program resolution
 // ─────────────────────────────────────────────────────────────
 
-type ResolveSession = Pick<SessionState, 'typeRegistry' | 'specializationCache' | 'genericTemplates' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'> &
+type ResolveSession = Pick<SessionState, 'typeRegistry' | 'specializationCache' | 'genericTemplatesResolved' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'> &
   Partial<Pick<SessionState, 'typeResolver' | 'typeAliasRegistry'>>
 
 /**
  * Resolve a (baseName, type_args) pair to a concrete ProgramType.
  * Generic types monomorphize on demand, keyed by fully-resolved integer args.
  * Non-generic types reject non-empty type_args.
+ *
+ * The strata pipeline is the only path: generic templates live in
+ * `genericTemplatesResolved` as `ResolvedProgram`s; instantiation routes
+ * through `compileResolvedToProgramDef` to produce a fresh `ProgramType`.
  */
 export function resolveProgramType(
   session: ResolveSession,
@@ -335,33 +275,49 @@ export function resolveProgramType(
   rawTypeArgs: RawTypeArgs | undefined,
   outerArgs: ResolvedTypeArgs | undefined,
 ): { type: ProgramType; typeArgs?: ResolvedTypeArgs } {
-  const specializeFromTemplate = (template: import('./program.js').ProgramNode) => {
-    const resolved = resolveTypeArgs(rawTypeArgs, outerArgs, template.type_params, `instance of '${baseName}'`)
+  const specializeFromResolvedTemplate = (template: import('./ir/nodes.js').ResolvedProgram) => {
+    // Mirror the legacy `type_params` shape that resolveTypeArgs expects.
+    const typeParamsByName: Record<string, { type: 'int'; default?: number }> = {}
+    for (const tp of template.typeParams) {
+      const entry: { type: 'int'; default?: number } = { type: 'int' }
+      if (tp.default !== undefined) entry.default = tp.default
+      typeParamsByName[tp.name] = entry
+    }
+    const resolved = resolveTypeArgs(rawTypeArgs, outerArgs, typeParamsByName, `instance of '${baseName}'`)
     const key = specializationCacheKey(baseName, resolved)
     const cached = session.specializationCache.get(key)
     if (cached) return { type: cached, typeArgs: resolved }
-    const specialized = specializeProgramNode(template, resolved)
-    specialized.name = key
-    const type = loadProgramDef(specialized, session)
+    // Build the TypeParamDecl-keyed substitution map expected by specializeProgram.
+    const subst = new Map<TypeParamDecl, number>()
+    for (const [name, value] of Object.entries(resolved)) {
+      const decl = template.typeParams.find(p => p.name === name)
+      if (!decl) {
+        throw new Error(`resolveProgramType: unknown type-param '${name}' on '${baseName}'`)
+      }
+      subst.set(decl, value)
+    }
+    const type = compileResolvedToProgramDef(template, subst, session)
+    type._def.typeName = key
     session.specializationCache.set(key, type)
     return { type, typeArgs: resolved }
   }
 
-  const template = session.genericTemplates.get(baseName)
-  if (template) return specializeFromTemplate(template)
+  const resolvedTemplate = session.genericTemplatesResolved.get(baseName)
+  if (resolvedTemplate) return specializeFromResolvedTemplate(resolvedTemplate)
 
-  // typeResolver may register baseName as a generic template (returning
-  // undefined for the concrete-type case — see stdlib_loader.ts). Re-check
-  // genericTemplates after the resolver fires so the lazy-load path works.
+  // typeResolver may register baseName lazily (returning undefined for the
+  // generic-template case — the resolver populates `genericTemplatesResolved`
+  // as a side effect). Re-check after the resolver fires so the lazy-load
+  // path works.
   const concrete = session.typeRegistry.get(baseName) ?? session.typeResolver?.(baseName)
   if (concrete === undefined) {
-    const lateTemplate = session.genericTemplates.get(baseName)
-    if (lateTemplate) return specializeFromTemplate(lateTemplate)
+    const lateResolved = session.genericTemplatesResolved.get(baseName)
+    if (lateResolved) return specializeFromResolvedTemplate(lateResolved)
   }
   if (!concrete) {
     const known = [
       ...session.typeRegistry.keys(),
-      ...session.genericTemplates.keys(),
+      ...session.genericTemplatesResolved.keys(),
     ].join(', ')
     throw new Error(`Unknown program type '${baseName}'. Known: ${known || '(none)'}`)
   }
@@ -369,237 +325,6 @@ export function resolveProgramType(
     throw new Error(`Program '${baseName}' does not declare type_params; got type_args: ${Object.keys(rawTypeArgs).join(', ')}`)
   }
   return { type: concrete }
-}
-
-// ─────────────────────────────────────────────────────────────
-// ProgramNode → ProgramDef
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Elaborate a v2 ProgramNode into a slot-indexed ProgramDef.
- *
- * Walks `body.decls` once to assign register/delay/instance IDs in source
- * order (preserving insertion-order semantics), then walks `body.assigns`
- * to attach output and next-state expressions. Nested `program_decl`
- * entries are ignored here — `loadProgramAsType` registers them before
- * this function runs.
- */
-export function loadProgramDef(
-  def: ProgramNode,
-  session: Pick<SessionState, 'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry' | 'specializationCache' | 'genericTemplates'> & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver'>>,
-): ProgramType {
-  const aliases = session.typeAliasRegistry
-  const ports = def.ports ?? {}
-  const inputSpecs  = ports.inputs  ?? []
-  const outputSpecs = ports.outputs ?? []
-  const inputNames  = inputSpecs.map(i => typeof i === 'string' ? i : i.name)
-  const outputNames = outputSpecs.map(o => typeof o === 'string' ? o : o.name)
-  const decodeType = (t: PortTypeDecl | undefined): PortType | undefined => {
-    if (t === undefined) return undefined
-    return decodePortTypeDecl(t, aliases, def.name)
-  }
-  const inputPortTypes  = inputSpecs.map(i => decodeType(typeof i === 'string' ? undefined : i.type))
-  const outputPortTypes = outputSpecs.map(o => decodeType(typeof o === 'string' ? undefined : o.type))
-  const inputBounds     = inputSpecs.map(s => resolveBounds(s, aliases))
-  const outputBounds    = outputSpecs.map(s => resolveBounds(s, aliases))
-
-  // ── Sum-decomposition pre-pass ──
-  // Build a local sum-type registry from this program's type_defs, then
-  // rewrite the body so sum-typed delay_decls expand into N+1 scalar
-  // delay_decls (one per bundle slot) and tag/match expressions over
-  // sum-typed values lower to scalar selects. After this pass, the body
-  // contains only scalar delays and standard arithmetic. The pre-pass
-  // also handles the empty-registry case as a no-op.
-  const localSumRegistry = new Map<string, SumTypeMeta>()
-  for (const td of (def.ports?.type_defs ?? [])) {
-    if (td.kind === 'sum') {
-      localSumRegistry.set(td.name, {
-        name: td.name,
-        variants: td.variants.map(v => ({
-          name: v.name,
-          payload: v.payload.map(f => ({ name: f.name, scalar: f.scalar_type })),
-        })),
-      })
-    }
-  }
-  const sumLoweredBody = expandSumTypes(def.body, localSumRegistry)
-  const defWithLoweredBody: ProgramNode = { ...def, body: sumLoweredBody }
-
-  // ── First pass over decls: assign IDs in source order ──
-  const body = expandDeclGenerators(defWithLoweredBody.body)
-  const regNames: string[] = []
-  const regInitValues: ValueCoercible[] = []
-  const regPortTypes: (PortType | undefined)[] = []
-  const delayNames: string[] = []
-  const delayInitValues: number[] = []
-  const delayUpdateByName = new Map<string, ExprNode>()
-  const nestedAliases: string[] = []
-  const nestedSpecByAlias = new Map<string, {
-    program: string
-    inputs?: Record<string, ExprNode>
-    type_args?: Record<string, number | ExprNode>
-  }>()
-
-  for (const rawDecl of body.decls ?? []) {
-    if (typeof rawDecl !== 'object' || rawDecl === null || Array.isArray(rawDecl))
-      throw new Error(`${def.name}: block.decls entries must be objects`)
-    const d = rawDecl as Record<string, unknown>
-    const op = d.op as string
-
-    if (op === 'regDecl') {
-      const name = d.name as string
-      regNames.push(name)
-      const init = d.init as unknown
-      const typeDecl = d.type as PortTypeDecl | undefined
-      if (typeof init === 'object' && init !== null && !Array.isArray(init) && 'zeros' in (init as Record<string, unknown>)) {
-        const n = (init as { zeros: number }).zeros
-        regInitValues.push(new Array(n).fill(0))
-        regPortTypes.push(ArrayType(Float, [n]))
-      } else if (typeDecl !== undefined) {
-        regInitValues.push(init as ValueCoercible)
-        regPortTypes.push(decodePortTypeDecl(typeDecl, aliases, def.name))
-      } else {
-        regInitValues.push(init as ValueCoercible)
-        regPortTypes.push(undefined)
-      }
-    } else if (op === 'delayDecl') {
-      const name = d.name as string
-      delayNames.push(name)
-      delayInitValues.push((d.init as number | undefined) ?? 0)
-      if (d.update !== undefined) delayUpdateByName.set(name, d.update as ExprNode)
-    } else if (op === 'instanceDecl') {
-      const alias = d.name as string
-      nestedAliases.push(alias)
-      nestedSpecByAlias.set(alias, {
-        program: d.program as string,
-        inputs: d.inputs as Record<string, ExprNode> | undefined,
-        type_args: d.type_args as Record<string, number | ExprNode> | undefined,
-      })
-    } else if (op === 'programDecl') {
-      // Registered by loadProgramAsType; nothing to do here.
-    } else if (op === 'paramDecl') {
-      // Session-scoped: handled by loadProgramAsSession / mergeProgramIntoSession.
-      // Not part of ProgramDef construction.
-    } else {
-      throw new Error(`${def.name}: unexpected decl op '${op}' in block.decls`)
-    }
-  }
-
-  const delayNameToId = new Map(delayNames.map((name, i) => [name, i]))
-  const nestedAliasToId = new Map(nestedAliases.map((alias, i) => [alias, i]))
-  const nestedAliasDef = new Map<string, ProgramDef>()
-  const nestedCalls: NestedCall[] = []
-
-  // Resolve nested instance types up-front, monomorphizing generics.
-  // Callers above us (for a generic outer program) have already specialized
-  // the outer frame, so spec.type_args here contains only concrete integers.
-  const nestedResolved = new Map<string, ProgramType>()
-  for (const alias of nestedAliases) {
-    const spec = nestedSpecByAlias.get(alias)!
-    const { type } = resolveProgramType(session, spec.program, spec.type_args as RawTypeArgs | undefined, undefined)
-    nestedResolved.set(alias, type)
-    nestedAliasDef.set(alias, type._def)
-  }
-
-  // Second pass: build call arg nodes (may reference any sibling via nested_out)
-  for (const alias of nestedAliases) {
-    const spec = nestedSpecByAlias.get(alias)!
-    const type = nestedResolved.get(alias)!
-
-    const callArgNodes: ExprNode[] = type._def.inputNames.map((name, idx) => {
-      if (name in (spec.inputs ?? {})) {
-        return slottifyExpr((spec.inputs ?? {})[name], inputNames, regNames, delayNameToId, nestedAliasToId, nestedAliasDef)
-      }
-      const defaultExpr = type._def.inputDefaults[idx]
-      if (defaultExpr) return defaultExpr._node
-      throw new Error(`Missing input '${name}' for nested module '${alias}'.`)
-    })
-
-    nestedCalls.push({ programDef: type._def, callArgNodes })
-  }
-
-  // ── Walk assigns: collect output_assign + next_update entries ──
-  const outputExprByName = new Map<string, ExprNode>()
-  const registerExprByName = new Map<string, ExprNode>()
-
-  for (const rawAssign of body.assigns ?? []) {
-    if (typeof rawAssign !== 'object' || rawAssign === null || Array.isArray(rawAssign))
-      throw new Error(`${def.name}: block.assigns entries must be objects`)
-    const a = rawAssign as Record<string, unknown>
-    const op = a.op as string
-
-    if (op === 'outputAssign') {
-      outputExprByName.set(a.name as string, a.expr as ExprNode)
-    } else if (op === 'nextUpdate') {
-      const target = a.target as { kind: string; name: string }
-      if (target.kind === 'reg') {
-        registerExprByName.set(target.name, a.expr as ExprNode)
-      } else if (target.kind === 'delay') {
-        delayUpdateByName.set(target.name, a.expr as ExprNode)
-      } else {
-        throw new Error(`${def.name}: next_update target.kind must be 'reg' or 'delay', got '${target.kind}'`)
-      }
-    } else {
-      throw new Error(`${def.name}: unexpected assign op '${op}' in block.assigns`)
-    }
-  }
-
-  // ── Convert delay update expressions ──
-  const delayUpdateNodes = delayNames.map(name => {
-    const update = delayUpdateByName.get(name)
-    if (update === undefined) throw new Error(`${def.name}: delay '${name}' has no update expression`)
-    return slottifyExpr(update, inputNames, regNames, delayNameToId, nestedAliasToId, nestedAliasDef)
-  })
-
-  // ── Convert output expressions ──
-  const outputExprNodes = outputNames.map(name => {
-    const node = outputExprByName.get(name)
-    if (node === undefined) throw new Error(`${def.name}: Output '${name}' missing from block.assigns.`)
-    return slottifyExpr(node, inputNames, regNames, delayNameToId, nestedAliasToId, nestedAliasDef)
-  })
-
-  // ── Convert register update expressions ──
-  const registerExprNodes: (ExprNode | null)[] = regNames.map(name => {
-    const node = registerExprByName.get(name)
-    if (node === undefined) return null
-    return slottifyExpr(node, inputNames, regNames, delayNameToId, nestedAliasToId, nestedAliasDef)
-  })
-
-  // ── Parse input defaults (carried on port specs in v2) ──
-  const rawInputDefaults: Record<string, ExprNode> = {}
-  const inputDefaults: (SignalExpr | null)[] = new Array(inputNames.length).fill(null)
-  for (let i = 0; i < inputSpecs.length; i++) {
-    const spec = inputSpecs[i] as string | ProgramPortSpec
-    if (typeof spec === 'string') continue
-    if (spec.default === undefined) continue
-    const name = spec.name
-    rawInputDefaults[name] = spec.default as ExprNode
-    inputDefaults[i] = coerce(spec.default as ExprCoercible)
-  }
-
-  const programDef: ProgramDef = {
-    typeName: def.name,
-    inputNames,
-    outputNames,
-    inputPortTypes,
-    outputPortTypes,
-    registerNames: regNames,
-    registerPortTypes: regPortTypes,
-    registerInitValues: regInitValues,
-    sampleRate: def.sample_rate ?? 44100.0,
-    rawInputDefaults,
-    inputDefaults,
-    delayInitValues,
-    outputExprNodes,
-    registerExprNodes,
-    delayUpdateNodes,
-    nestedCalls,
-    breaksCycles: def.breaks_cycles ?? false,
-    inputBounds,
-    outputBounds,
-  }
-
-  return new ProgramType(programDef)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -744,4 +469,3 @@ export function loadJSON(json: { schema: string; [k: string]: unknown }, session
   const { node, topLevel } = normalizeProgramFile(json)
   loadProgramAsSession(node, topLevel, session)
 }
-

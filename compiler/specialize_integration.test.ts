@@ -43,9 +43,9 @@ describe('resolveProgramType — generic instantiation', () => {
   test('monomorphizes and caches a generic type', () => {
     const session = makeSession()
     loadProgramAsType(genericDelay(), session)
-    // Generic programs go into genericTemplates, not typeRegistry
+    // Generic programs land in genericTemplatesResolved, not typeRegistry
     expect(session.typeRegistry.has('Delay')).toBe(false)
-    expect(session.genericTemplates.has('Delay')).toBe(true)
+    expect(session.genericTemplatesResolved.has('Delay')).toBe(true)
 
     const { type: t1, typeArgs: a1 } = resolveProgramType(session, 'Delay', { N: 8 }, undefined)
     const { type: t2, typeArgs: a2 } = resolveProgramType(session, 'Delay', { N: 16 }, undefined)

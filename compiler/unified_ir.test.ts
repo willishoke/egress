@@ -20,6 +20,12 @@ const fixtures = readdirSync(FIXTURE_DIR)
   .filter(f => f.endsWith('.json'))
   .sort()
 
+/** Goldens anchor what the strata pipeline emits. The legacy path was
+ *  deleted in Phase C9 — there is only one pipeline now. Four fixtures
+ *  (stdlib_delay, stdlib_ladder, stdlib_phaser, stdlib_sequencer) use
+ *  instances and would have produced a different slot layout under the
+ *  pre-C8 legacy path; the goldens here reflect the strata layout. */
+
 describe('FlatPlan golden fixtures', () => {
   for (const file of fixtures) {
     test(file, () => {

@@ -2,15 +2,23 @@
  * stdlib_loader.ts — pure (no-fs) stdlib registration.
  *
  * Accepts a map of raw stdlib JSON payloads keyed by program name and
- * wires them into a session's type registry with an on-demand resolver.
- * Shared between the disk-reading loader in program.ts and the browser
- * bundle (stdlib_bundled.ts).
+ * wires them into a session's type registry. Used by the browser bundle
+ * (stdlib_bundled.ts) where filesystem access is unavailable; the
+ * disk-reading entry (`loadStdlib` in `program.ts`) bypasses this and
+ * parses .trop sources directly.
+ *
+ * Pipeline: raw v2 JSON → raise → ParsedProgram → elaborate →
+ * ResolvedProgram → strataPipeline → loadProgramDefFromResolved.
  */
 
 import type { SessionState } from './session.js'
 import { normalizeProgramFile } from './session.js'
-import { loadProgramAsType } from './program.js'
 import type { ProgramType } from './program_types.js'
+import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
+import { compileResolvedToProgramDef } from './ir/strata.js'
+import type { ResolvedProgram } from './ir/nodes.js'
+import { raiseProgram } from './parse/raise.js'
+import { parseProgram as parseTropicalProgram } from './parse/declarations.js'
 
 type StdlibTarget =
   | Map<string, ProgramType>
@@ -21,8 +29,9 @@ type StdlibTarget =
       | 'paramRegistry'
       | 'triggerRegistry'
       | 'specializationCache'
-      | 'genericTemplates'
-    >
+      | 'genericTemplatesResolved'
+      | 'resolvedRegistry'
+    > & Partial<Pick<SessionState, 'typeResolver'>>
 
 function toSession(target: StdlibTarget) {
   if (target instanceof Map) {
@@ -32,7 +41,8 @@ function toSession(target: StdlibTarget) {
       paramRegistry: new Map(),
       triggerRegistry: new Map(),
       specializationCache: new Map(),
-      genericTemplates: new Map(),
+      genericTemplatesResolved: new Map<string, ResolvedProgram>(),
+      resolvedRegistry: new Map<string, ResolvedProgram>(),
     } as Pick<
       SessionState,
       | 'typeRegistry'
@@ -40,21 +50,33 @@ function toSession(target: StdlibTarget) {
       | 'paramRegistry'
       | 'triggerRegistry'
       | 'specializationCache'
-      | 'genericTemplates'
+      | 'genericTemplatesResolved'
+      | 'resolvedRegistry'
     > &
       Partial<Pick<SessionState, 'typeResolver'>>
   }
-  return target as typeof target & Partial<Pick<SessionState, 'typeResolver'>>
+  return target
 }
 
 /**
- * Register stdlib types from a pre-loaded map of raw JSON payloads.
- * Keys are program names; values are the parsed JSON (either schema version).
+ * Register stdlib types from a pre-loaded map of raw v2 JSON payloads.
+ * Keys are program names; values are tropical_program_2 JSON.
  *
- * Types are indexed first, then loaded on demand via a resolver installed on
- * `session.typeResolver` — dependencies resolve recursively regardless of
- * insertion order. Generic templates are registered without instantiation
- * (instantiation requires type_args at use sites).
+ * Each payload is raised back to `ParsedProgram` (raise is the JSON →
+ * parser-shape bridge), elaborated against a fixed-point sibling
+ * resolver, then either stashed in `genericTemplatesResolved` (generic)
+ * or compiled through the strata pipeline (concrete).
+ *
+ * Known limitation: `raiseProgram` drops match-arm payload field labels
+ * (substitutes `_unknown` placeholders) because the legacy
+ * tropical_program_2 schema doesn't carry them. Programs with sum-type
+ * pattern matching (e.g. TriggerRamp, EnvExpDecay) therefore fail to
+ * elaborate via this path. The disk-loading `loadStdlib` in `program.ts`
+ * bypasses raise — it parses .trop sources directly — and is the
+ * supported entry. The bundled-stdlib path here is left in place for
+ * environments without filesystem access; under sum-using bundled
+ * payloads it raises an explicit error rather than silently producing
+ * a broken registry.
  */
 export function loadStdlibFromMap(
   target: StdlibTarget,
@@ -64,26 +86,114 @@ export function loadStdlibFromMap(
   const index: Map<string, unknown> =
     rawByName instanceof Map ? rawByName : new Map(Object.entries(rawByName))
 
-  const loading = new Set<string>()
-  session.typeResolver = (name: string): ProgramType | undefined => {
-    const existing = session.typeRegistry.get(name)
-    if (existing) return existing
-    if (session.genericTemplates.has(name)) return undefined
-    if (loading.has(name)) {
-      throw new Error(`Circular stdlib dependency: ${[...loading, name].join(' → ')}`)
-    }
-    const raw = index.get(name)
-    if (raw === undefined) return undefined
-    loading.add(name)
+  const parsedByName = new Map<string, ReturnType<typeof raiseProgram>>()
+  for (const [name, raw] of index) {
     const { node } = normalizeProgramFile(raw as { schema?: string; [k: string]: unknown })
-    const type = loadProgramAsType(node, session)
-    loading.delete(name)
-    return type
+    parsedByName.set(name, raiseProgram(node))
   }
 
-  for (const name of index.keys()) {
-    if (!session.typeRegistry.has(name) && !session.genericTemplates.has(name)) {
-      session.typeResolver(name)
+  const localResolved = new Map<string, ResolvedProgram>()
+  const externalResolver: ExternalProgramResolver = name => localResolved.get(name)
+
+  const remaining = new Map(parsedByName)
+  let progress = true
+  while (progress && remaining.size > 0) {
+    progress = false
+    for (const [name, parsed] of remaining) {
+      try {
+        const resolved = elaborate(parsed, externalResolver)
+        localResolved.set(name, resolved)
+        remaining.delete(name)
+        progress = true
+      } catch {
+        // Sibling not yet elaborated; retry next pass.
+      }
+    }
+  }
+  if (remaining.size > 0) {
+    const [name, parsed] = remaining.entries().next().value as [string, ReturnType<typeof raiseProgram>]
+    elaborate(parsed, externalResolver)
+    throw new Error(`loadStdlibFromMap: failed to elaborate '${name}'`)
+  }
+
+  for (const [name, prog] of localResolved) {
+    if (prog.typeParams.length > 0) {
+      session.genericTemplatesResolved.set(name, prog)
+      continue
+    }
+    if (session.typeRegistry.has(name)) continue
+    const type = compileResolvedToProgramDef(prog, new Map(), session)
+    session.typeRegistry.set(name, type)
+    session.resolvedRegistry.set(name, prog)
+  }
+
+  if (!session.typeResolver) {
+    session.typeResolver = (n: string): ProgramType | undefined => {
+      return session.typeRegistry.get(n)
+    }
+  }
+}
+
+/**
+ * Register stdlib types from a pre-loaded map of raw .trop source strings.
+ * Keys are program names; values are the source text (the inside of the
+ * single `tropical` code block, post-markdown extraction).
+ *
+ * Used by the browser bundle (`compiler/stdlib_bundled.ts`) where
+ * filesystem access is unavailable. Internally identical to the disk-side
+ * `loadStdlib`: parse → elaborate (fixed-point sibling resolver) → strata.
+ */
+export function loadStdlibFromSources(
+  target: StdlibTarget,
+  sourcesByName: Map<string, string> | Record<string, string>,
+): void {
+  const session = toSession(target)
+  const index: Map<string, string> =
+    sourcesByName instanceof Map ? sourcesByName : new Map(Object.entries(sourcesByName))
+
+  const parsedByName = new Map<string, ReturnType<typeof parseTropicalProgram>>()
+  for (const [name, src] of index) {
+    parsedByName.set(name, parseTropicalProgram(src))
+  }
+
+  const localResolved = new Map<string, ResolvedProgram>()
+  const externalResolver: ExternalProgramResolver = name => localResolved.get(name)
+
+  const remaining = new Map(parsedByName)
+  let progress = true
+  while (progress && remaining.size > 0) {
+    progress = false
+    for (const [name, parsed] of remaining) {
+      try {
+        const resolved = elaborate(parsed, externalResolver)
+        localResolved.set(name, resolved)
+        remaining.delete(name)
+        progress = true
+      } catch {
+        // Sibling not yet elaborated; retry next pass.
+      }
+    }
+  }
+  if (remaining.size > 0) {
+    const [name, parsed] = remaining.entries().next().value as [string, ReturnType<typeof parseTropicalProgram>]
+    elaborate(parsed, externalResolver)
+    throw new Error(`loadStdlibFromSources: failed to elaborate '${name}'`)
+  }
+
+  for (const [name, prog] of localResolved) {
+    if (prog.typeParams.length > 0) {
+      session.genericTemplatesResolved.set(name, prog)
+      continue
+    }
+    if (session.typeRegistry.has(name)) continue
+    const type = compileResolvedToProgramDef(prog, new Map(), session)
+    session.typeRegistry.set(name, type)
+    session.resolvedRegistry.set(name, prog)
+  }
+
+  if (!session.typeResolver) {
+    session.typeResolver = (n: string): ProgramType | undefined => {
+      return session.typeRegistry.get(n)
     }
   }
 }

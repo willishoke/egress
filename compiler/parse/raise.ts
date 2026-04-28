@@ -459,12 +459,22 @@ function raiseMatch(node: Record<string, unknown>): ParsedExprNode {
   const arms = node.arms as Record<string, { bind?: string | string[]; body: LegacyExprNode }>
   const armEntries: MatchArmEntry[] = []
   for (const [variant, arm] of Object.entries(arms)) {
-    const armOut: MatchArmEntry = {
+    // The legacy schema does not carry payload field names — only the
+    // bind name(s). Without scope, raise cannot reconstruct the
+    // user-source field labels, so emit `_unknown` placeholders. The
+    // round-trip to legacy via `lower` discards these placeholders, so
+    // `lower(raise(legacy)) === legacy` still holds; only the surface
+    // print is lossy when raise feeds it (which is no worse than the
+    // pre-C0 `f0`/`f1` behaviour).
+    const bindNames: string[] = arm.bind === undefined
+      ? []
+      : (typeof arm.bind === 'string' ? [arm.bind] : arm.bind)
+    const binds = bindNames.map(bn => ({ field: nameRef('_unknown'), bind: bn }))
+    armEntries.push({
       variant: nameRef(variant),
+      binds,
       body: raiseExpr(arm.body),
-    }
-    if (arm.bind !== undefined) armOut.bind = arm.bind
-    armEntries.push(armOut)
+    })
   }
   return {
     op: 'match',

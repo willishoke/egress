@@ -6,7 +6,7 @@ import { loadStdlib as loadBuiltins } from './program.js'
 import { flattenSession } from './flatten.js'
 
 const session: SessionState = makeSession()
-loadBuiltins(session.typeRegistry)
+loadBuiltins(session)
 
 // Instantiate the same 13 modules from the user's patch
 const modules: [string, string][] = [
@@ -37,7 +37,7 @@ session.inputExprNodes.set('Clock1:freq', 2.1667)
 // Test individual modules to find which is slow
 for (const [typeName, instanceName] of modules) {
   const solo = makeSession()
-  loadBuiltins(solo.typeRegistry)
+  loadBuiltins(solo)
   const type = solo.typeRegistry.get(typeName)!
   solo.instanceRegistry.set(instanceName, type.instantiateAs(instanceName))
   solo.graphOutputs.push({ instance: instanceName, output: type._def.outputNames[0] })

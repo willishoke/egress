@@ -375,26 +375,10 @@ function printMatch(node: MatchNode): string {
 function printMatchArm(arm: MatchArmEntry): string {
   const v = arm.variant.name
   const body = printExprAt(arm.body, PREC_LOWEST)
-  if (arm.bind === undefined) return `${v} => ${body}`
-  // bind is the local name(s). The parser doesn't preserve which payload
-  // field maps to which name (it dropped the field-name → bind-name
-  // pairing), so we emit positional pattern binds: `Variant { _: name }`
-  // becomes `Variant { name }` — but the parser's surface required
-  // `field: bindname`. Since the parser drops the field label, round-
-  // trip CANNOT exactly preserve the field-name in the pattern. We emit
-  // the placeholder field name `_` (the parser also accepts plain ident
-  // → ident here? No — the parser requires `field: bindname`).
-  //
-  // Concrete consequence: the pretty-printer emits the bind name
-  // alongside the variant payload's field positions, but since payload
-  // field names aren't reachable from the parsed MatchArmEntry, we emit
-  // them with synthetic field names `f0, f1, ...`. The round-trip
-  // through the parser is then `Variant { f0: name, f1: name2 } => body`
-  // which re-parses to the same semantic shape (the payload field
-  // names are anonymous inside a match arm — the only thing the parser
-  // keeps is the bind list). This is the canonical re-parsable form.
-  const binds = Array.isArray(arm.bind) ? arm.bind : [arm.bind]
-  const pattern = binds.map((bn, i) => `f${i}: ${bn}`).join(', ')
+  if (arm.binds.length === 0) return `${v} => ${body}`
+  // The parser carries the user-source `field: bind` pairing in
+  // `binds`, so round-trip preserves the field labels exactly.
+  const pattern = arm.binds.map(b => `${b.field.name}: ${b.bind}`).join(', ')
   return `${v} { ${pattern} } => ${body}`
 }
 

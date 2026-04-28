@@ -250,6 +250,10 @@ export type BinaryOpTag =
   | 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
   | 'and' | 'or'
   | 'bitAnd' | 'bitOr' | 'bitXor' | 'lshift' | 'rshift'
+  // Numeric builtins surfaced as `f(a, b)` in source; same arity/shape as
+  // the infix ops above, so they share BinaryOpNode rather than earning
+  // their own resolved-IR node types.
+  | 'pow' | 'floorDiv' | 'ldexp'
 
 export interface BinaryOpNode {
   op: BinaryOpTag
@@ -282,6 +286,20 @@ export interface SelectNode {
 export interface IndexNode {
   op: 'index'
   args: [ResolvedExpr, ResolvedExpr]
+}
+
+/** `zeros(count)` — array constructor producing `count` zero elements.
+ *  An array op: array_lower (C6) lowers it to scalar primitives. */
+export interface ZerosNode {
+  op: 'zeros'
+  count: ResolvedExpr
+}
+
+/** `arraySet(arr, idx, value)` — non-mutating "set the i-th element".
+ *  An array op: array_lower (C6) lowers it. */
+export interface ArraySetNode {
+  op: 'arraySet'
+  args: [ResolvedExpr, ResolvedExpr, ResolvedExpr]
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -406,6 +424,8 @@ export type ResolvedExprOpNode =
   // Operators
   | BinaryOpNode | UnaryOpNode
   | ClampNode | SelectNode | IndexNode
+  // Array ops (lowered by array_lower in C6)
+  | ZerosNode | ArraySetNode
   // References (graph edges)
   | InputRef | RegRef | DelayRef | ParamRef | TypeParamRef | BindingRef
   | NestedOut

@@ -4,11 +4,13 @@
 
 import { describe, test, expect } from 'bun:test'
 import { applyBounds, flattenSession } from './flatten'
-import { loadProgramDef, resolveBounds, resolveBaseType, BOUNDED_TYPE_ALIASES } from './session'
+import { resolveBounds, resolveBaseType, BOUNDED_TYPE_ALIASES } from './session'
+import { loadProgramAsType } from './program'
 import type { ExprNode } from './expr'
 import type { ProgramNode, ProgramPortSpec } from './program'
 import type { TypeDefJSON } from './session'
 import type { ProgramType, ProgramInstance, Bounds } from './program_types'
+import type { ResolvedProgram } from './ir/nodes'
 import { Param, Trigger } from './runtime/param'
 import { Float } from './term'
 
@@ -16,7 +18,7 @@ import { Float } from './term'
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-/** Minimal session for loadProgramDef (no FFI). */
+/** Minimal session for loadProgramAsType (no FFI). */
 function mockSession() {
   return {
     typeRegistry: new Map<string, ProgramType>(),
@@ -24,7 +26,17 @@ function mockSession() {
     instanceRegistry: new Map<string, ProgramInstance>(),
     paramRegistry: new Map<string, Param>(),
     triggerRegistry: new Map<string, Trigger>(),
+    specializationCache: new Map<string, ProgramType>(),
+    genericTemplatesResolved: new Map<string, ResolvedProgram>(),
+    resolvedRegistry: new Map<string, ResolvedProgram>(),
   }
+}
+
+/** Test programs are always non-generic — assert non-undefined. */
+function loadType(prog: ProgramNode, session: ReturnType<typeof mockSession>): ProgramType {
+  const t = loadProgramAsType(prog, session)
+  if (!t) throw new Error(`expected non-generic program '${prog.name}'`)
+  return t
 }
 
 interface LeafOverrides {
@@ -155,7 +167,7 @@ describe('resolveBaseType', () => {
 describe('loadProgramDef bounds', () => {
   test('extracts explicit output bounds', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'float', bounds: [-1, 1] }],
     }), session)
     expect(type._def.outputBounds).toEqual([[-1, 1]])
@@ -163,7 +175,7 @@ describe('loadProgramDef bounds', () => {
 
   test('extracts bounds from named type alias', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'signal' }],
     }), session)
     expect(type._def.outputBounds).toEqual([[-1, 1]])
@@ -173,7 +185,7 @@ describe('loadProgramDef bounds', () => {
 
   test('extracts explicit input bounds', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       inputs: [{ name: 'x', type: 'float', bounds: [0, null] }],
     }), session)
     expect(type._def.inputBounds).toEqual([[0, null]])
@@ -181,14 +193,14 @@ describe('loadProgramDef bounds', () => {
 
   test('no bounds yields null entries', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram(), session)
+    const type = loadType(leafProgram(), session)
     expect(type._def.outputBounds).toEqual([null])
     expect(type._def.inputBounds).toEqual([null])
   })
 
   test('string-shorthand input has null bounds', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       inputs: ['x'],
     }), session)
     expect(type._def.inputBounds).toEqual([null])
@@ -204,7 +216,7 @@ describe('flattenSession output bounds', () => {
     const session = mockSession()
 
     // Register a leaf type with bounded output
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'float', bounds: [-1, 1] }],
     }), session)
     session.typeRegistry.set('TestLeaf', type)
@@ -236,7 +248,7 @@ describe('flattenSession output bounds', () => {
   test('unbounded output still gets audio safety clamp when routed to graph output', () => {
     const session = mockSession()
 
-    const type = loadProgramDef(leafProgram(), session)
+    const type = loadType(leafProgram(), session)
     session.typeRegistry.set('TestLeaf', type)
 
     const inst = type.instantiateAs('a')
@@ -264,7 +276,7 @@ describe('flattenSession output bounds', () => {
   test('one-sided lower bound produces Select (max) plus audio safety Clamp', () => {
     const session = mockSession()
 
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'float', bounds: [0, null] }],
     }), session)
     session.typeRegistry.set('TestLeaf', type)
@@ -297,7 +309,7 @@ describe('flattenSession input bounds', () => {
     const session = mockSession()
 
     // Source: unbounded output
-    const srcType = loadProgramDef(leafProgram({
+    const srcType = loadType(leafProgram({
       name: 'Source',
       inputs: [],
       outputsExpr: { out: 999 },
@@ -305,7 +317,7 @@ describe('flattenSession input bounds', () => {
     session.typeRegistry.set('Source', srcType)
 
     // Dest: bounded input [0, 1]
-    const dstType = loadProgramDef(leafProgram({
+    const dstType = loadType(leafProgram({
       name: 'Dest',
       inputs: [{ name: 'x', type: 'float', bounds: [0, 1] }],
     }), session)
@@ -341,7 +353,7 @@ describe('flattenSession cross-instance bounded output', () => {
     const session = mockSession()
 
     // Source with bounded output
-    const srcType = loadProgramDef(leafProgram({
+    const srcType = loadType(leafProgram({
       name: 'Source',
       inputs: [],
       outputs: [{ name: 'out', type: 'float', bounds: [-1, 1] }],
@@ -350,7 +362,7 @@ describe('flattenSession cross-instance bounded output', () => {
     session.typeRegistry.set('Source', srcType)
 
     // Two consumers
-    const dstType = loadProgramDef(leafProgram({
+    const dstType = loadType(leafProgram({
       name: 'Dest',
     }), session)
     session.typeRegistry.set('Dest', dstType)
@@ -405,7 +417,7 @@ describe('audio output safety clamp', () => {
 
   test('unbounded audio output gets safety clamp to [-1, 1]', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputsExpr: { out: 999 },
     }), session)
     session.typeRegistry.set('TestLeaf', type)
@@ -418,7 +430,7 @@ describe('audio output safety clamp', () => {
 
   test('output bounded [-1, 1] gets no extra safety clamp', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'float', bounds: [-1, 1] }],
       outputsExpr: { out: { op: 'input', name: 'x' } },
     }), session)
@@ -433,7 +445,7 @@ describe('audio output safety clamp', () => {
 
   test('output bounded [0, 1] (tighter) gets no extra safety clamp', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'float', bounds: [0, 1] }],
       outputsExpr: { out: { op: 'input', name: 'x' } },
     }), session)
@@ -448,7 +460,7 @@ describe('audio output safety clamp', () => {
 
   test('output bounded [-5, 5] (wider) gets additional safety clamp', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'float', bounds: [-5, 5] }],
       outputsExpr: { out: { op: 'input', name: 'x' } },
     }), session)
@@ -463,7 +475,7 @@ describe('audio output safety clamp', () => {
 
   test('one-sided output bounds [0, null] gets safety clamp', () => {
     const session = mockSession()
-    const type = loadProgramDef(leafProgram({
+    const type = loadType(leafProgram({
       outputs: [{ name: 'out', type: 'float', bounds: [0, null] }],
       outputsExpr: { out: { op: 'input', name: 'x' } },
     }), session)
@@ -509,19 +521,10 @@ describe('user-definable type aliases', () => {
     expect(resolveBaseType('signal', aliases)).toBe('float')
   })
 
-  test('loadProgramDef uses session typeAliasRegistry', () => {
-    const session = mockSession()
-    session.typeAliasRegistry.set('audio_level', { base: 'float', bounds: [-0.5, 0.5] })
-
-    const type = loadProgramDef(leafProgram({
-      inputs: [{ name: 'x', type: 'audio_level' }],
-      outputs: [{ name: 'out', type: 'audio_level' }],
-    }), session)
-    expect(type._def.inputBounds).toEqual([[-0.5, 0.5]])
-    expect(type._def.outputBounds).toEqual([[-0.5, 0.5]])
-    expect(type._def.inputPortTypes).toEqual([Float])
-    expect(type._def.outputPortTypes).toEqual([Float])
-  })
+  // (Removed in C9: 'session typeAliasRegistry' as a fallback for unknown
+  //  type names. Under the strata pipeline, type aliases live in the
+  //  program's own ports.type_defs (resolved by the elaborator); the
+  //  session-level registry is no longer consulted to invent names.)
 
   test('Zod schema accepts alias type_def', () => {
     const { parseProgramV2 } = require('./schema')

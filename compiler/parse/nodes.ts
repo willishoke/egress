@@ -257,13 +257,14 @@ export interface TagNode {
 
 /** A single arm of a `match`: `Variant [{ field: name, ... }] => body`.
  *  `variant` is a NameRefNode resolved against the sum type's variants.
- *  `bind` is the local name(s) for payload fields (string for one
- *  binder, string[] for multiple); omitted when the variant has no
- *  payload. (`bind` is anonymous — no decl exists, so it stays a
- *  string.) */
+ *  `binds` is the ordered list of (payload-field-name, local-bind-name)
+ *  pairings the user wrote in the pattern — empty when the variant has
+ *  no payload. The field is wrapped in a NameRefNode awaiting resolution
+ *  against the variant's declared payload; the bind name is a plain
+ *  string (binders are anonymous — no decl exists). */
 export interface MatchArmEntry {
   variant: NameRefNode
-  bind?: string | string[]
+  binds: Array<{ field: NameRefNode; bind: string }>
   body: ExprNode
 }
 

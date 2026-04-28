@@ -9,15 +9,18 @@
 import type { ExprNode } from './expr.js'
 import { validateExpr } from './expr.js'
 import type { TypeDefJSON, SessionState } from './session.js'
-import { loadProgramDef, resolveProgramType } from './session.js'
+import { resolveProgramType } from './session.js'
 import { applyFlatPlan } from './apply_plan.js'
-import { expandDeclGenerators } from './lower_arrays.js'
 import { Param, Trigger } from './runtime/param.js'
 import { ProgramType } from './program_types.js'
 import { exprDependencies, reachableInstances, buildDependencyGraph, topologicalSort } from './compiler.js'
 import type { RawTypeArgs } from './specialize.js'
 import { Float, portTypeEqual, type PortType } from './term.js'
 import type { Bounds } from './program_types.js'
+import { raiseProgram } from './parse/raise.js'
+import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
+import { compileResolvedToProgramDef } from './ir/strata.js'
+import type { ResolvedProgram } from './ir/nodes.js'
 
 // ─────────────────────────────────────────────────────────────
 // Program schema
@@ -308,9 +311,6 @@ export function loadProgramAsSession(
   topLevel: ProgramTopLevel,
   session: SessionState,
 ): void {
-  // Expand any generate_decls entries before any iteration over body.decls
-  prog = { ...prog, body: expandDeclGenerators(prog.body) }
-
   // Clear session state
   session.dac = null
   session.instanceRegistry.clear()
@@ -322,6 +322,9 @@ export function loadProgramAsSession(
   session.typeAliasRegistry.clear()
   session.sumTypeRegistry.clear()
   session.structTypeRegistry.clear()
+  // Note: typeRegistry, genericTemplatesResolved, resolvedRegistry, and
+  // specializationCache are NOT cleared — they hold the stdlib + any
+  // session-defined types that the loaded program may instantiate.
 
   // Register type defs (aliases, sums, structs) from ports.type_defs before anything else
   for (const td of prog.ports?.type_defs ?? []) {
@@ -399,14 +402,16 @@ export function loadProgramAsSession(
  * Load a ProgramNode as a ProgramType (registerable in typeRegistry).
  * Programs with inline `program_decl` entries get their subprograms registered first.
  *
- * Generic programs (with `type_params`) are stored in `genericTemplates`
- * instead of being eagerly compiled; they materialize on instantiation via
- * `resolveProgramType`. For non-generic programs the ProgramType is both
- * registered in `typeRegistry` and returned.
+ * The strata pipeline is the only path: ProgramNode JSON is raised to
+ * `ParsedProgramNode`, elaborated against the session's type registry to a
+ * `ResolvedProgram`, and (for non-generics) compiled through
+ * `compileResolvedToProgramDef`. Generic programs (with `type_params`) are
+ * stored in `genericTemplatesResolved` and materialize on instantiation via
+ * `resolveProgramType`.
  */
 export function loadProgramAsType(
   prog: ProgramNode,
-  session: Pick<SessionState, 'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry' | 'specializationCache' | 'genericTemplates'> & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver' | 'sumTypeRegistry' | 'structTypeRegistry'>>,
+  session: Pick<SessionState, 'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry' | 'specializationCache' | 'genericTemplatesResolved' | 'resolvedRegistry'> & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver' | 'sumTypeRegistry' | 'structTypeRegistry'>>,
 ): ProgramType | undefined {
   // Register type defs (aliases, sums, structs) from type_defs before processing subprograms
   for (const td of prog.ports?.type_defs ?? []) {
@@ -432,14 +437,36 @@ export function loadProgramAsType(
     loadProgramAsType({ ...sub.program, name: sub.name }, session)
   }
 
-  // Generic: stash the template, defer compilation to instantiation time.
-  if (prog.type_params && Object.keys(prog.type_params).length > 0) {
-    session.genericTemplates.set(prog.name, prog)
+  // Raise to ParsedProgramNode + elaborate against the session-built registry.
+  // The external resolver lets nested instanceDecls reference previously
+  // registered sibling programs (concrete or generic).
+  const parsed = raiseProgram(prog)
+  const externalResolver: ExternalProgramResolver = name => {
+    const resolvedTemplate = session.genericTemplatesResolved.get(name)
+    if (resolvedTemplate) return resolvedTemplate
+    const cached = session.resolvedRegistry.get(name)
+    if (cached) return cached
+    // Trigger lazy load (e.g. stdlib resolver) which populates resolvedRegistry.
+    if (session.typeResolver) {
+      session.typeResolver(name)
+      const lateGeneric = session.genericTemplatesResolved.get(name)
+      if (lateGeneric) return lateGeneric
+      const lateConcrete = session.resolvedRegistry.get(name)
+      if (lateConcrete) return lateConcrete
+    }
+    return undefined
+  }
+  const resolved = elaborate(parsed, externalResolver)
+
+  // Generic: stash the resolved template, defer compilation to instantiation.
+  if (resolved.typeParams.length > 0) {
+    session.genericTemplatesResolved.set(prog.name, resolved)
     return undefined
   }
 
-  const type = loadProgramDef(prog, session)
+  const type = compileResolvedToProgramDef(resolved, new Map(), session)
   session.typeRegistry.set(prog.name, type)
+  session.resolvedRegistry.set(prog.name, resolved)
   return type
 }
 
@@ -537,30 +564,58 @@ export function mergeProgramIntoSession(
 import { readFileSync, readdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { loadStdlibFromMap } from './stdlib_loader.js'
 import { extractMarkdown } from './parse/markdown.js'
 import { parseProgram as parseTropicalProgram } from './parse/declarations.js'
-import { lowerProgram } from './parse/lower.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+
+type StdlibTarget =
+  | Map<string, ProgramType>
+  | (Pick<SessionState, 'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry' | 'specializationCache' | 'genericTemplatesResolved' | 'resolvedRegistry'>
+    & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver'>>)
+
+function asLoadSession(target: StdlibTarget): Pick<
+  SessionState,
+  'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'
+  | 'specializationCache' | 'genericTemplatesResolved' | 'resolvedRegistry'
+> & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver'>> {
+  if (target instanceof Map) {
+    return {
+      typeRegistry: target,
+      instanceRegistry: new Map(),
+      paramRegistry: new Map(),
+      triggerRegistry: new Map(),
+      specializationCache: new Map(),
+      genericTemplatesResolved: new Map(),
+      resolvedRegistry: new Map(),
+    }
+  }
+  return target
+}
 
 /**
  * Load all stdlib program files into a type registry. Reads `../stdlib/*.trop`
  * from disk via the literate-program pipeline:
  *
- *   read → extractMarkdown → parseProgram → lowerProgram → wrap as v2 file
+ *     read → extractMarkdown → parseProgram → elaborate → ResolvedProgram →
+ *     strataPipeline → loadProgramDefFromResolved
  *
- * Browser builds use `loadStdlibFromMap` directly with a bundled JSON map
- * (see compiler/stdlib_bundled.ts, generated by web/bundle_stdlib.ts).
+ * Generic programs (with type_params) land in `genericTemplatesResolved`;
+ * non-generics get compiled and added to `typeRegistry`. Both branches also
+ * stash the pre-strata `ResolvedProgram` in `resolvedRegistry` so that
+ * later `define_program` calls can resolve cross-program references via
+ * the elaborator.
+ *
+ * Browser builds use `loadStdlibFromMap` (in `stdlib_loader.ts`) directly
+ * with a bundled JSON map (see compiler/stdlib_bundled.ts, generated by
+ * web/bundle_stdlib.ts).
  */
-export function loadStdlib(
-  target: Map<string, ProgramType> | Pick<SessionState, 'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry' | 'specializationCache' | 'genericTemplates'>,
-): void {
+export function loadStdlib(target: StdlibTarget): void {
   const stdlibDir = join(__dirname, '../stdlib')
   const tropFiles = readdirSync(stdlibDir).filter(f => f.endsWith('.trop')).sort()
 
-  const rawByName = new Map<string, unknown>()
+  const parsedByName = new Map<string, ReturnType<typeof parseTropicalProgram>>()
   for (const file of tropFiles) {
     const path = join(stdlibDir, file)
     const text = readFileSync(path, 'utf-8')
@@ -569,15 +624,73 @@ export function loadStdlib(
       throw new Error(`${path}: expected exactly 1 tropical code block, got ${ext.blocks.length}`)
     }
     const parsed = parseTropicalProgram(ext.blocks[0].source)
-    const lowered = lowerProgram(parsed)
-    const { op: _op, ...fields } = lowered as unknown as Record<string, unknown>
-    void _op
-    const v2 = { schema: 'tropical_program_2', ...fields } as { schema: string; name?: unknown }
-    if (typeof v2.name !== 'string') throw new Error(`${path}: lowered program missing name`)
-    rawByName.set(v2.name, v2)
+    parsedByName.set(parsed.name, parsed)
+  }
+  loadStdlibFromResolved(target, parsedByName)
+}
+
+/**
+ * Register stdlib types from a map of pre-parsed `ParsedProgram`s. Elaborates
+ * each against a sibling-resolver, then either:
+ *   - stashes the `ResolvedProgram` in `genericTemplatesResolved` (generics)
+ *   - or compiles via `compileResolvedToProgramDef` and pushes into
+ *     `typeRegistry` (non-generics, also cached in `resolvedRegistry`).
+ *
+ * Elaboration uses fixed-point iteration: each pass elaborates the programs
+ * whose external refs can be resolved by the registry built so far.
+ */
+function loadStdlibFromResolved(
+  target: StdlibTarget,
+  parsedByName: Map<string, ReturnType<typeof parseTropicalProgram>>,
+): void {
+  const session = asLoadSession(target)
+
+  const localResolved = new Map<string, ResolvedProgram>()
+  const externalResolver: ExternalProgramResolver = name => localResolved.get(name)
+
+  const remaining = new Map(parsedByName)
+  let progress = true
+  while (progress && remaining.size > 0) {
+    progress = false
+    for (const [name, parsed] of remaining) {
+      try {
+        const resolved = elaborate(parsed, externalResolver)
+        localResolved.set(name, resolved)
+        remaining.delete(name)
+        progress = true
+      } catch {
+        // Sibling not yet elaborated; try again next pass.
+      }
+    }
+  }
+  if (remaining.size > 0) {
+    // Surface the first failure for diagnostics.
+    const [name, parsed] = remaining.entries().next().value as [string, ReturnType<typeof parseTropicalProgram>]
+    elaborate(parsed, externalResolver)   // re-throw with the real error
+    throw new Error(`loadStdlibFromResolved: failed to elaborate '${name}'`)
   }
 
-  loadStdlibFromMap(target, rawByName)
+  // Walk in elaboration order (insertion order in localResolved is
+  // dependency-respecting by construction).
+  for (const [name, prog] of localResolved) {
+    if (prog.typeParams.length > 0) {
+      session.genericTemplatesResolved.set(name, prog)
+      continue
+    }
+    if (session.typeRegistry.has(name)) continue
+    const type = compileResolvedToProgramDef(prog, new Map(), session)
+    session.typeRegistry.set(name, type)
+    session.resolvedRegistry.set(name, prog)
+  }
+
+  // typeResolver: callers fall back here when looking up a stdlib type
+  // that wasn't pre-registered concretely (e.g. a generic template name
+  // that resolveProgramType then re-checks against genericTemplatesResolved).
+  if (!session.typeResolver) {
+    session.typeResolver = (n: string): ProgramType | undefined => {
+      return session.typeRegistry.get(n)
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

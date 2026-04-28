@@ -73,7 +73,8 @@ import type {
   LetExpr,
   FoldExpr, ScanExpr, GenerateExpr, IterateExpr, ChainExpr, Map2Expr, ZipWithExpr,
   ClampNode, SelectNode, IndexNode,
-  BinaryOpNode, UnaryOpNode, UnaryOpTag,
+  ZerosNode, ArraySetNode,
+  BinaryOpNode, BinaryOpTag, UnaryOpNode, UnaryOpTag,
   SampleRateNode, SampleIndexNode,
 } from './nodes.js'
 import { ElaborationError } from './nodes.js'
@@ -92,18 +93,51 @@ const SCALAR_ALIASES: ReadonlySet<string> = new Set([
 const BUILTIN_TYPE_TO_SCALAR: Record<string, ScalarKind> = {
   float: 'float', int: 'int', bool: 'bool',
   signal: 'float', freq: 'float', unipolar: 'float', bipolar: 'float',
+  phase:  'float',
 }
 
-/** Builtin nullary calls: `sample_rate()`, `sample_index()`. */
-const NULLARY_CALLS: ReadonlySet<string> = new Set(['sample_rate', 'sample_index'])
+/** Builtin port-type aliases that carry implicit bounds. The legacy
+ *  `BOUNDED_TYPE_ALIASES` table in `compiler/session.ts:233` is the
+ *  source of truth for these bounds; the elaborator must mirror them
+ *  so a port declared `signal` carries `[-1, 1]` bounds in the
+ *  resolved IR. Without this, downstream slot-allocation drops the
+ *  bounds and the byte-equality dual-run gate diverges. */
+const BUILTIN_TYPE_BOUNDS: Record<string, [number | null, number | null]> = {
+  signal:   [-1, 1],
+  bipolar:  [-1, 1],
+  unipolar: [0, 1],
+  phase:    [0, 1],
+  freq:     [0, null],
+}
 
-/** Builtin unary function calls — surface name → resolved op tag. */
+/** Builtin nullary calls. Both snake_case and camelCase forms are
+ *  recognized — stdlib (.trop) uses camelCase, older fixtures use
+ *  snake_case. The elaborator is name-agnostic; the resolved IR carries
+ *  the canonical (camelCase) op tag regardless of the surface form. */
+const NULLARY_CALLS: ReadonlySet<string> = new Set([
+  'sample_rate', 'sample_index',
+  'sampleRate', 'sampleIndex',
+])
+
+/** Builtin unary function calls — surface name → resolved op tag. Both
+ *  case conventions are accepted (see NULLARY_CALLS comment). */
 const UNARY_CALLS: Record<string, UnaryOpTag> = {
   sqrt: 'sqrt', abs: 'abs', neg: 'neg',
   floor: 'floor', ceil: 'ceil', round: 'round',
-  not: 'not', bit_not: 'bitNot',
-  to_int: 'toInt', to_bool: 'toBool', to_float: 'toFloat',
-  float_exponent: 'floatExponent',
+  not: 'not',
+  bit_not: 'bitNot', bitNot: 'bitNot',
+  to_int: 'toInt', toInt: 'toInt',
+  to_bool: 'toBool', toBool: 'toBool',
+  to_float: 'toFloat', toFloat: 'toFloat',
+  float_exponent: 'floatExponent', floatExponent: 'floatExponent',
+}
+
+/** Builtin binary function calls — surface name → resolved BinaryOp tag.
+ *  These have call syntax (`pow(a, b)`) but the same shape as infix ops. */
+const BINARY_CALLS: Record<string, BinaryOpTag> = {
+  pow: 'pow',
+  floor_div: 'floorDiv', floorDiv: 'floorDiv',
+  ldexp: 'ldexp',
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -132,10 +166,14 @@ interface Scope {
    *  external program types. (Decls themselves don't leak — only
    *  type-defs and program registrations.) */
   parent?: Scope
+  /** Optional external program-type resolver. When set, instance decls
+   *  naming a program not in any enclosing scope's `programs` map fall
+   *  through to this. Inherited by nested program scopes. */
+  resolveExternalProgram?: ExternalProgramResolver
 }
 
 function emptyScope(parent?: Scope): Scope {
-  return {
+  const scope: Scope = {
     inputs: new Map(),
     outputs: new Map(),
     typeParams: new Map(),
@@ -149,6 +187,11 @@ function emptyScope(parent?: Scope): Scope {
     binders: new Map(),
     parent,
   }
+  // Nested programs inherit the resolver from their parent scope.
+  if (parent?.resolveExternalProgram) {
+    scope.resolveExternalProgram = parent.resolveExternalProgram
+  }
+  return scope
 }
 
 /** Look up a name across scope categories in a defined order. Used when
@@ -225,16 +268,37 @@ function resolveElement(scope: Scope, ref: ParsedNameRefNode): ScalarKind | Alia
 // Public entry
 // ─────────────────────────────────────────────────────────────
 
+/** Optional callback for resolving program-type names that aren't nested
+ *  inside the program being elaborated. Mirrors `session.typeResolver`
+ *  from `compiler/stdlib_loader.ts` — the elaborator stays a pure
+ *  function but lets its caller stage cross-program lookups (e.g.
+ *  elaborate stdlib in dependency order, feeding earlier results into
+ *  later elaborations). Returns `undefined` for unknown names. */
+export type ExternalProgramResolver = (name: string) => ResolvedProgram | undefined
+
 /** Resolve a parsed program to a graph IR. The returned object carries
  *  declared inputs/outputs/type-params/type-defs as Decl objects, and
  *  every reference inside the body is a direct edge to one of those
- *  decls. */
-export function elaborate(prog: ParsedProgramNode): ResolvedProgram {
-  return elaborateProgram(prog, undefined)
+ *  decls.
+ *
+ *  Optional `resolveExternalProgram`: when an `InstanceDecl` names a
+ *  program type that isn't nested in this program's body, the elaborator
+ *  consults the resolver. This is how stdlib elaboration works — sibling
+ *  programs are elaborated first, then fed in via the resolver. */
+export function elaborate(
+  prog: ParsedProgramNode,
+  resolveExternalProgram?: ExternalProgramResolver,
+): ResolvedProgram {
+  return elaborateProgram(prog, undefined, resolveExternalProgram)
 }
 
-function elaborateProgram(prog: ParsedProgramNode, parent: Scope | undefined): ResolvedProgram {
+function elaborateProgram(
+  prog: ParsedProgramNode,
+  parent: Scope | undefined,
+  resolveExternalProgram?: ExternalProgramResolver,
+): ResolvedProgram {
   const scope = emptyScope(parent)
+  scope.resolveExternalProgram = resolveExternalProgram
 
   // 1. Type-defs from `ports.type_defs` first — the elaborator's port-type
   //    + decl walks need them in scope.
@@ -395,7 +459,8 @@ function resolveInputPort(spec: ParsedProgramPort, scope: Scope): InputDecl {
   const decl: InputDecl = { op: 'inputDecl', name: spec.name }
   if (spec.type !== undefined) decl.type = resolvePortType(spec.type, scope)
   if (spec.default !== undefined) decl.default = resolveExpr(spec.default, scope)
-  if (spec.bounds !== undefined) decl.bounds = spec.bounds
+  const bounds = spec.bounds ?? aliasBounds(spec.type, scope)
+  if (bounds !== undefined) decl.bounds = bounds
   return decl
 }
 
@@ -405,8 +470,24 @@ function resolveOutputPort(spec: ParsedProgramPort, scope: Scope): OutputDecl {
   }
   const decl: OutputDecl = { op: 'outputDecl', name: spec.name }
   if (spec.type !== undefined) decl.type = resolvePortType(spec.type, scope)
-  if (spec.bounds !== undefined) decl.bounds = spec.bounds
+  const bounds = spec.bounds ?? aliasBounds(spec.type, scope)
+  if (bounds !== undefined) decl.bounds = bounds
   return decl
+}
+
+/** Resolve implicit bounds from a port-type's alias. Returns undefined
+ *  when the type is structured (array), missing, or the named alias has
+ *  no bounds. User-declared aliases override builtin bounds; explicit
+ *  port-spec bounds (`spec.bounds`) override both and are checked at
+ *  the call site. */
+function aliasBounds(
+  pt: ParsedPortType | undefined,
+  scope: Scope,
+): [number | null, number | null] | undefined {
+  if (pt === undefined || !isParsedNameRef(pt)) return undefined
+  const td = lookupTypeDef(scope, pt.name)
+  if (td && td.op === 'aliasTypeDef') return td.bounds
+  return BUILTIN_TYPE_BOUNDS[pt.name]
 }
 
 function resolvePortType(pt: ParsedPortType, scope: Scope): PortType {
@@ -541,12 +622,22 @@ function registerInstanceDecl(d: ParsedInstanceDecl, scope: Scope): InstanceDecl
   if (scope.instances.has(d.name)) {
     throw new ElaborationError(`duplicate instance '${d.name}'`)
   }
-  // Resolve program type — only nested programs supported in B6.
-  const targetProgram = lookupProgram(scope, d.program.name)
+  // Resolve program type. First try nested programs visible in scope
+  // (and any enclosing scope), then fall through to the external
+  // resolver if one was provided.
+  let targetProgram = lookupProgram(scope, d.program.name)
+  if (!targetProgram) {
+    const resolver = findResolver(scope)
+    if (resolver) {
+      const external = resolver(d.program.name)
+      if (external) targetProgram = external
+    }
+  }
   if (!targetProgram) {
     throw new ElaborationError(
-      `instance '${d.name}': program type '${d.program.name}' is not a nested program in scope. ` +
-      `External program types (stdlib) require the loader to register them — defer to a later phase.`,
+      `instance '${d.name}': program type '${d.program.name}' is not a nested program in scope ` +
+      `and no external resolver provided it. Pass an ExternalProgramResolver to elaborate() ` +
+      `to resolve cross-program references (e.g. stdlib types).`,
     )
   }
   const decl: InstanceDecl = {
@@ -558,6 +649,18 @@ function registerInstanceDecl(d: ParsedInstanceDecl, scope: Scope): InstanceDecl
   }
   scope.instances.set(d.name, decl)
   return decl
+}
+
+/** Walk up the scope chain to find the outermost (root) resolver. The
+ *  resolver propagates from elaborate()'s caller to every enclosed scope
+ *  via `emptyScope`, so the root scope's value is the canonical one. */
+function findResolver(scope: Scope): ExternalProgramResolver | undefined {
+  let s: Scope | undefined = scope
+  while (s) {
+    if (s.resolveExternalProgram) return s.resolveExternalProgram
+    s = s.parent
+  }
+  return undefined
 }
 
 /** Second-pass resolver: fill in the expression-shaped fields of an
@@ -793,7 +896,7 @@ function resolveCall(node: ParsedCallNode, scope: Scope): ResolvedExprOpNode {
     if (node.args.length !== 0) {
       throw new ElaborationError(`'${fname}()' takes no arguments`)
     }
-    if (fname === 'sample_rate') {
+    if (fname === 'sample_rate' || fname === 'sampleRate') {
       const n: SampleRateNode = { op: 'sampleRate' }
       return n
     }
@@ -809,6 +912,43 @@ function resolveCall(node: ParsedCallNode, scope: Scope): ResolvedExprOpNode {
     }
     const u: UnaryOpNode = { op: unaryTag, args: [resolveExpr(node.args[0], scope)] }
     return u
+  }
+
+  // Binary builtins (call syntax, same shape as infix BinaryOpNode)
+  const binaryTag = BINARY_CALLS[fname]
+  if (binaryTag) {
+    if (node.args.length !== 2) {
+      throw new ElaborationError(`'${fname}' takes 2 arguments; got ${node.args.length}`)
+    }
+    const b: BinaryOpNode = {
+      op: binaryTag,
+      args: [resolveExpr(node.args[0], scope), resolveExpr(node.args[1], scope)],
+    }
+    return b
+  }
+
+  // Array ops — produce array-shaped values; lowered to scalar primitives
+  // by array_lower (Phase C6). The elaborator just constructs the node.
+  if (fname === 'zeros') {
+    if (node.args.length !== 1) {
+      throw new ElaborationError(`'zeros' takes 1 argument (count); got ${node.args.length}`)
+    }
+    const z: ZerosNode = { op: 'zeros', count: resolveExpr(node.args[0], scope) }
+    return z
+  }
+  if (fname === 'arraySet' || fname === 'array_set') {
+    if (node.args.length !== 3) {
+      throw new ElaborationError(`'${fname}' takes 3 arguments (arr, idx, value); got ${node.args.length}`)
+    }
+    const a: ArraySetNode = {
+      op: 'arraySet',
+      args: [
+        resolveExpr(node.args[0], scope),
+        resolveExpr(node.args[1], scope),
+        resolveExpr(node.args[2], scope),
+      ],
+    }
+    return a
   }
 
   // Ternary builtins
@@ -920,17 +1060,40 @@ function resolveMatch(node: ParsedMatch, scope: Scope): MatchExpr {
     }
     seen.add(variant)
 
-    // Build binders matching variant.payload; the parsed `bind` is
-    // string | string[] | undefined. Empty payload arms must have no
-    // binders; non-empty arms must bind every payload field.
-    const bindNames = a.bind === undefined ? []
-      : (Array.isArray(a.bind) ? a.bind : [a.bind])
-    if (bindNames.length !== variant.payload.length) {
+    // Build binders matching variant.payload by field name. Empty
+    // payload arms must have no binders; non-empty arms must bind every
+    // payload field exactly once. Binders are emitted in variant.payload
+    // declaration order (the order the IR consumer expects).
+    if (a.binds.length !== variant.payload.length) {
       throw new ElaborationError(
-        `match arm '${variant.name}': expected ${variant.payload.length} binder(s) (one per payload field), got ${bindNames.length}`,
+        `match arm '${variant.name}': expected ${variant.payload.length} binder(s) (one per payload field), got ${a.binds.length}`,
       )
     }
-    const binders: BinderDecl[] = bindNames.map(name => ({ op: 'binderDecl', name }))
+    const bindByField = new Map<string, string>()
+    for (const b of a.binds) {
+      if (bindByField.has(b.field.name)) {
+        throw new ElaborationError(
+          `match arm '${variant.name}': duplicate pattern field '${b.field.name}'`,
+        )
+      }
+      bindByField.set(b.field.name, b.bind)
+    }
+    const binders: BinderDecl[] = variant.payload.map(field => {
+      const bindName = bindByField.get(field.name)
+      if (bindName === undefined) {
+        throw new ElaborationError(
+          `match arm '${variant.name}': missing pattern binding for payload field '${field.name}'`,
+        )
+      }
+      bindByField.delete(field.name)
+      return { op: 'binderDecl', name: bindName }
+    })
+    if (bindByField.size > 0) {
+      const extras = [...bindByField.keys()].join(', ')
+      throw new ElaborationError(
+        `match arm '${variant.name}': unknown pattern field(s): ${extras}`,
+      )
+    }
     // Push binders into scope, resolve body, pop.
     const body = withBinders(scope, binders, () => resolveExpr(a.body, scope))
     arms.push({ variant, binders, body })
@@ -954,17 +1117,36 @@ function resolveMatch(node: ParsedMatch, scope: Scope): MatchExpr {
 }
 
 function resolveLet(node: ParsedLetNode, scope: Scope): LetExpr {
-  // Each binding's value evaluates in the OUTER scope (no let* — bindings
-  // can't see siblings). Then all binders enter scope for the body.
+  // Sequential `let*` semantics: each binder's value is resolved in a
+  // scope that already contains the prior binders. Surface stdlib relies
+  // on this — programs like Tanh write `let { c: clamp(...); c2: c * c }`
+  // expecting `c2` to see `c`. This matches lower.ts's lowerLet (sibling
+  // pass uses the same fix; cross-pass behavior must agree).
+  //
+  // Binders enter scope one at a time as we walk the entries; the body
+  // sees all of them. We snapshot prior bindings so we can restore them
+  // (mirroring withBinders) — this matters when the parent scope already
+  // has a binder with the same name (shadowing).
   const binders: LetExpr['binders'] = []
-  for (const [name, valueExpr] of Object.entries(node.bind)) {
-    const binder: BinderDecl = { op: 'binderDecl', name }
-    const value = resolveExpr(valueExpr, scope)
-    binders.push({ binder, value })
+  const prior: Array<{ name: string; was: BinderDecl | undefined }> = []
+  try {
+    for (const [name, valueExpr] of Object.entries(node.bind)) {
+      const binder: BinderDecl = { op: 'binderDecl', name }
+      const value = resolveExpr(valueExpr, scope)
+      binders.push({ binder, value })
+      // After resolving the value, push this binder so subsequent
+      // entries (and ultimately the body) can see it.
+      prior.push({ name, was: scope.binders.get(name) })
+      scope.binders.set(name, binder)
+    }
+    const inResolved = resolveExpr(node.in, scope)
+    return { op: 'let', binders, in: inResolved }
+  } finally {
+    for (const { name, was } of prior.reverse()) {
+      if (was) scope.binders.set(name, was)
+      else scope.binders.delete(name)
+    }
   }
-  const decls = binders.map(b => b.binder)
-  const inResolved = withBinders(scope, decls, () => resolveExpr(node.in, scope))
-  return { op: 'let', binders, in: inResolved }
 }
 
 function resolveFold(node: ParsedFold, scope: Scope): FoldExpr {

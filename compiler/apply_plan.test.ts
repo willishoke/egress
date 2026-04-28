@@ -46,7 +46,7 @@ const TEST_OSC: ProgramNode = {
 
 function setupSession(instances: Record<string, { program: string }>, bufferLength = 256) {
   const session = makeSession(bufferLength)
-  loadBuiltins(session.typeRegistry)
+  loadBuiltins(session)
   session.typeRegistry.set('TestOsc', loadProgramAsType(TEST_OSC, session))
   const decls = Object.entries(instances).map(([name, { program }]) => ({
     op: 'instanceDecl' as const, name, program,
@@ -89,7 +89,7 @@ describe('applySessionWiring', () => {
 
   test('matches reference output from loadJSON path', () => {
     const refSession = makeSession(256)
-    loadBuiltins(refSession.typeRegistry)
+    loadBuiltins(refSession)
     refSession.typeRegistry.set('TestOsc', loadProgramAsType(TEST_OSC, refSession))
     const prog: ProgramFile = {
       schema: 'tropical_program_2',

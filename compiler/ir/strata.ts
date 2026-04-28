@@ -50,7 +50,7 @@ export function compileResolvedToProgramDef(
   session: Pick<
     SessionState,
     'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'
-    | 'specializationCache' | 'genericTemplates'
+    | 'specializationCache' | 'genericTemplatesResolved'
   > & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver'>>,
 ): ProgramType {
   const lowered = strataPipeline(prog, typeArgs)

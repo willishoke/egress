@@ -9,31 +9,16 @@
  *      the sum-typed delay into N+1 scalar slots and rewrites
  *      payload-bearing match arms to read the per-variant field
  *      slots.
- *   4. End-to-end: stdlib's EnvExpDecay and TriggerRamp lower to
- *      ProgramDefs that match the legacy pipeline byte-for-byte
- *      (the dual-run gate, asserted via `loadProgramDefFromResolved`).
  */
 
 import { describe, test, expect } from 'bun:test'
-import { readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { extractMarkdown } from '../parse/markdown.js'
 import { parseProgram } from '../parse/declarations.js'
 import { elaborate } from './elaborator.js'
 import { sumLower } from './sum_lower.js'
-import { lowerProgram } from '../parse/lower.js'
-import { loadProgramAsType } from '../program.js'
-import { loadProgramDefFromResolved } from './load.js'
 import type {
   ResolvedProgram, ResolvedExpr, ResolvedExprOpNode,
   DelayDecl, OutputAssign,
 } from './nodes.js'
-import type { ProgramDef, ProgramType } from '../program_types.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-const STDLIB_DIR = join(__dirname, '../../stdlib')
 
 function elab(src: string): ResolvedProgram {
   return elaborate(parseProgram(src))
@@ -62,27 +47,6 @@ function findOps(prog: ResolvedProgram, targets: string[]): string[] {
   }
   for (const a of prog.body.assigns) visitExpr(a.expr)
   return out
-}
-
-function emptySession() {
-  return {
-    typeRegistry:        new Map<string, ProgramType>(),
-    instanceRegistry:    new Map(),
-    paramRegistry:       new Map(),
-    triggerRegistry:     new Map(),
-    specializationCache: new Map(),
-    genericTemplates:    new Map(),
-    typeAliasRegistry:   new Map(),
-  }
-}
-
-function normalizeDef(def: ProgramDef): ProgramDef {
-  return JSON.parse(JSON.stringify(def, (_k, v) => {
-    if (v && typeof v === 'object' && !Array.isArray(v) && '_node' in v && Object.keys(v).length <= 3) {
-      return (v as { _node: unknown })._node
-    }
-    return v
-  })) as ProgramDef
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -223,27 +187,7 @@ function walkChildren(node: ResolvedExprOpNode, k: (e: ResolvedExpr) => void): v
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// 4. End-to-end: stdlib EnvExpDecay & TriggerRamp byte-equal
-// ─────────────────────────────────────────────────────────────
-
-function loadStdlibSource(name: string): string {
-  const text = readFileSync(join(STDLIB_DIR, `${name}.trop`), 'utf-8')
-  const ext = extractMarkdown(text)
-  if (ext.blocks.length !== 1) throw new Error(`${name}.trop: expected 1 code block`)
-  return ext.blocks[0].source
-}
-
-describe('sumLower — stdlib byte-equality (dual-run gate)', () => {
-  for (const name of ['EnvExpDecay', 'TriggerRamp']) {
-    test(`${name}: legacy ProgramDef === sumLower → loadProgramDefFromResolved`, () => {
-      const src = loadStdlibSource(name)
-      // Legacy: parse → lower → loadProgramAsType.
-      const legacy = loadProgramAsType(lowerProgram(parseProgram(src)), emptySession())!
-      // New: parse → elaborate → sumLower → loadProgramDefFromResolved.
-      const lowered = sumLower(elaborate(parseProgram(src)))
-      const fresh = loadProgramDefFromResolved(lowered, emptySession())
-      expect(normalizeDef(fresh._def)).toEqual(normalizeDef(legacy._def))
-    })
-  }
-})
+// (Removed in C9: stdlib EnvExpDecay/TriggerRamp byte-equal dual-run
+// gate. With the legacy `loadProgramDef` deleted, the comparison has
+// no dual to compare against; the strata pipeline alone is the source
+// of truth, exercised end-to-end by jit_interp_equiv and apply_plan.)

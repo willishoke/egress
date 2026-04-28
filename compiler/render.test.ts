@@ -67,7 +67,7 @@ const TEST_OSC: ProgramNode = {
 /** Build and compile a single-oscillator session outputting the named waveform. */
 function oscSession(freq: number, output: 'saw' | 'sin', bufferLength = 256) {
   const session = makeSession(bufferLength)
-  loadBuiltins(session.typeRegistry)
+  loadBuiltins(session)
   session.typeRegistry.set('TestOsc', loadProgramAsType(TEST_OSC,session))
   loadJSON({
     schema: 'tropical_program_2',
@@ -108,7 +108,7 @@ describe('renderFrames / buffer backend', () => {
 
   test('hot-swap updates frequency while preserving phase state', () => {
     const session = makeSession(256)
-    loadBuiltins(session.typeRegistry)
+    loadBuiltins(session)
     session.typeRegistry.set('TestOsc', loadProgramAsType(TEST_OSC,session))
     loadJSON({
       schema: 'tropical_program_2',
@@ -158,13 +158,13 @@ describe('renderFrames / buffer backend', () => {
     }
 
     const s32 = makeSession(32)
-    loadBuiltins(s32.typeRegistry)
+    loadBuiltins(s32)
     s32.typeRegistry.set('TestOsc', loadProgramAsType(TEST_OSC,s32))
     loadJSON(prog, s32)
     const a = renderFrames(s32.runtime, 16)  // 16 × 32 = 512
 
     const s512 = makeSession(512)
-    loadBuiltins(s512.typeRegistry)
+    loadBuiltins(s512)
     s512.typeRegistry.set('TestOsc', loadProgramAsType(TEST_OSC,s512))
     loadJSON(prog, s512)
     const b = renderFrames(s512.runtime, 1)  // 1 × 512 = 512

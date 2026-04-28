@@ -7,9 +7,10 @@ import { normalizeWiringTypes, FlattenError, flattenSession, flattenExpressions 
 import type { InstanceInfo } from './compiler'
 import { Float, ArrayType } from './term'
 import type { ExprNode } from './expr'
-import { loadProgramDef } from './session'
+import { loadProgramAsType } from './program'
 import type { ProgramType, ProgramInstance, Bounds } from './program_types'
 import type { ProgramNode } from './program'
+import type { ResolvedProgram } from './ir/nodes'
 import { Param, Trigger } from './runtime/param'
 
 // ─────────────────────────────────────────────────────────────
@@ -164,6 +165,9 @@ describe('feedback cycle auto-delay', () => {
       instanceRegistry: new Map<string, ProgramInstance>(),
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),
+      specializationCache: new Map<string, ProgramType>(),
+      genericTemplatesResolved: new Map<string, ResolvedProgram>(),
+      resolvedRegistry: new Map<string, ResolvedProgram>(),
     }
   }
 
@@ -182,7 +186,7 @@ describe('feedback cycle auto-delay', () => {
   test('A → B → A feedback cycle flattens without throwing', () => {
     const session = mockSession()
 
-    const type = loadProgramDef(passthrough(), session)
+    const type = loadProgramAsType(passthrough(), session)!
     session.typeRegistry.set('Pass', type)
 
     const a = type.instantiateAs('a')
@@ -214,7 +218,7 @@ describe('feedback cycle auto-delay', () => {
   test('self-feedback (A.out → A.in) flattens without throwing', () => {
     const session = mockSession()
 
-    const type = loadProgramDef(passthrough(), session)
+    const type = loadProgramAsType(passthrough(), session)!
     session.typeRegistry.set('Pass', type)
 
     const a = type.instantiateAs('a')
@@ -250,6 +254,9 @@ describe('gateable instances wrap outputs in source_tag', () => {
       instanceRegistry: new Map<string, ProgramInstance>(),
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),
+      specializationCache: new Map<string, ProgramType>(),
+      genericTemplatesResolved: new Map<string, ResolvedProgram>(),
+      resolvedRegistry: new Map<string, ResolvedProgram>(),
     }
   }
 
@@ -274,7 +281,7 @@ describe('gateable instances wrap outputs in source_tag', () => {
   test('gateable instance emits source_tag on outputs and register updates', () => {
     const session = mockSession()
 
-    const type = loadProgramDef(passthroughWithState(), session)
+    const type = loadProgramAsType(passthroughWithState(), session)!
     session.typeRegistry.set('Pass', type)
 
     const voice = type.instantiateAs('voice_0')
@@ -319,7 +326,7 @@ describe('gateable instances wrap outputs in source_tag', () => {
   test('gateable=true without gate_input rejected at flatten time', () => {
     const session = mockSession()
 
-    const type = loadProgramDef(passthroughWithState(), session)
+    const type = loadProgramAsType(passthroughWithState(), session)!
     session.typeRegistry.set('Pass', type)
 
     const voice = type.instantiateAs('voice_0')
@@ -344,7 +351,7 @@ describe('gateable instances wrap outputs in source_tag', () => {
   test('non-gateable instances emit outputs without source_tag wrapping', () => {
     const session = mockSession()
 
-    const type = loadProgramDef(passthroughWithState(), session)
+    const type = loadProgramAsType(passthroughWithState(), session)!
     session.typeRegistry.set('Pass', type)
 
     const voice = type.instantiateAs('voice_0')
@@ -382,6 +389,9 @@ describe('gate_input self-reference (#98)', () => {
       instanceRegistry: new Map<string, ProgramInstance>(),
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),
+      specializationCache: new Map<string, ProgramType>(),
+      genericTemplatesResolved: new Map<string, ResolvedProgram>(),
+      resolvedRegistry: new Map<string, ResolvedProgram>(),
     }
   }
 
@@ -409,7 +419,7 @@ describe('gate_input self-reference (#98)', () => {
     // users a hysteresis pattern: "stay live only while my own previous output
     // exceeded threshold."
     const session = mockSession()
-    const type = loadProgramDef(passthroughWithReg(), session)
+    const type = loadProgramAsType(passthroughWithReg(), session)!
     session.typeRegistry.set('Pass', type)
 
     const voice = type.instantiateAs('voice_0')
@@ -455,7 +465,8 @@ describe('cycle-breaker with nested calls (#99)', () => {
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),
       specializationCache: new Map<string, ProgramType>(),
-      genericTemplates: new Map<string, ProgramNode>(),
+      genericTemplatesResolved: new Map<string, ResolvedProgram>(),
+      resolvedRegistry: new Map<string, ResolvedProgram>(),
     }
   }
 
@@ -503,9 +514,9 @@ describe('cycle-breaker with nested calls (#99)', () => {
     // Any Phase 2 non-cycle-breaking instance processed after would have its
     // register ids drift past its position in flatRegisterExprs.
     const session = mockSession()
-    const innerType = loadProgramDef(passthrough(), session)
+    const innerType = loadProgramAsType(passthrough(), session)!
     session.typeRegistry.set('Inner', innerType)
-    const cbType = loadProgramDef(cycleBreakerWithNested(), session)
+    const cbType = loadProgramAsType(cycleBreakerWithNested(), session)!
     session.typeRegistry.set('CBNested', cbType)
 
     // Instantiate both a cycle-breaker-with-nested AND a regular instance

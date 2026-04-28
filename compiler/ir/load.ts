@@ -70,7 +70,7 @@ interface Slots {
 type LoadSession = Pick<
   SessionState,
   'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'
-  | 'specializationCache' | 'genericTemplates'
+  | 'specializationCache' | 'genericTemplatesResolved'
 > & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver'>>
 
 export function loadProgramDefFromResolved(

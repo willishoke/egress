@@ -63,7 +63,7 @@ function runNative(plan: FlatPlan, samples: number): Float64Array {
 function makeSinOscPlan(freqHz: number): FlatPlan {
   const session = makeSession(64)
   try {
-    loadStdlib(session.typeRegistry)
+    loadStdlib(session)
     const prog: ProgramFile = {
       schema: 'tropical_program_2',
       name: 'eq_sinosc',
@@ -82,7 +82,7 @@ function makeSinOscPlan(freqHz: number): FlatPlan {
 function makeOnePolePlan(cutoff: number): FlatPlan {
   const session = makeSession(64)
   try {
-    loadStdlib(session.typeRegistry)
+    loadStdlib(session)
     const prog: ProgramFile = {
       schema: 'tropical_program_2',
       name: 'eq_onepole',

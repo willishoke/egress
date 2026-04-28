@@ -273,7 +273,7 @@ function resolveProgramTypeOrFail(
   try {
     return resolveProgramType(session, programName, typeArgs, undefined)
   } catch (e) {
-    const registered = session.typeRegistry.has(programName) || session.genericTemplates.has(programName)
+    const registered = session.typeRegistry.has(programName) || session.genericTemplatesResolved.has(programName)
     if (!registered) {
       failEnum({
         code:    'unknown_program',
@@ -281,7 +281,7 @@ function resolveProgramTypeOrFail(
         value:   programName,
         options: [
           ...session.typeRegistry.keys(),
-          ...session.genericTemplates.keys(),
+          ...session.genericTemplatesResolved.keys(),
         ],
       })
     }
@@ -1089,16 +1089,27 @@ function handleListPrograms() {
       }
     })
 
-    const generic = [...session.genericTemplates.entries()].map(([typeName, prog]) => ({
+    const generic = [...session.genericTemplatesResolved.entries()].map(([typeName, prog]) => ({
       program_name: typeName,
-      inputs: (prog.ports?.inputs ?? []).map(i => typeof i === 'string'
-        ? { name: i, type: null, bounds: null, default: null }
-        : { name: i.name, type: i.type ?? null, bounds: i.bounds ?? null, default: i.default ?? null }),
-      outputs: (prog.ports?.outputs ?? []).map(o => typeof o === 'string'
-        ? { name: o, type: null, bounds: null }
-        : { name: o.name, type: o.type ?? null, bounds: o.bounds ?? null }),
+      inputs: prog.ports.inputs.map(i => ({
+        name: i.name,
+        type: null,
+        bounds: i.bounds ?? null,
+        default: null,
+      })),
+      outputs: prog.ports.outputs.map(o => ({
+        name: o.name,
+        type: null,
+        bounds: o.bounds ?? null,
+      })),
       registers: [] as Array<{ name: string; type: string | null }>,
-      type_params: prog.type_params ?? null,
+      type_params: prog.typeParams.length > 0
+        ? Object.fromEntries(prog.typeParams.map(tp => {
+            const entry: { type: 'int'; default?: number } = { type: 'int' }
+            if (tp.default !== undefined) entry.default = tp.default
+            return [tp.name, entry]
+          }))
+        : null,
     }))
 
     return [...concrete, ...generic]

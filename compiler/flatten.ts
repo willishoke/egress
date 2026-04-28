@@ -17,7 +17,11 @@ import {
   extractInstanceInfo,
   buildDependencyGraph, topologicalSort, tarjanSCC,
 } from './compiler.js'
-import { lowerArrayOps } from './lower_arrays.js'
+// Phase C9: lowerArrayOps was deleted. ProgramDef arrives from
+// `loadProgramDefFromResolved` post-arrayLower, so all combinators and
+// array ops have already been unrolled. The legacy fallback was only
+// needed when ProgramDef came from `loadProgramDef(ProgramNode)`, and
+// that path no longer exists.
 import { type PortType, Float, Bool, ArrayType } from './term.js'
 import { checkArrayConnection } from './array_wiring.js'
 import { emitNumericProgram, type NInstr, type ScalarType, type GroupInfo } from './emit_numeric.js'
@@ -1045,8 +1049,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
       expr = offsetRegisters(expr, registerBase, offsetMemo)
       const delayMemo = new WeakMap<object, ExprNode>()
       expr = resolveDelayValues(expr, delayBase, delayMemo)
-      const lowerMemo = new WeakMap<object, ExprNode>()
-      expr = lowerArrayOps(expr, lowerMemo)
       const bounds = def.outputBounds[i]
       if (bounds) expr = applyBounds(expr, bounds)
       flatOutputExprs.push(expr)
@@ -1148,11 +1150,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
       expr = substituteInputs(expr, inputMap, substMemo)
       const refsMemo = new WeakMap<object, ExprNode>()
       expr = resolveRefs(expr, resolvedOutputs, resolvedOutputNames, refsMemo)
-      // Lower array ops (zeros, ones, fill, array_literal, etc.) to primitives.
-      // lowerArrayOps returns the original node unchanged when no array ops exist,
-      // preserving DAG identity throughout.
-      const lowerMemo = new WeakMap<object, ExprNode>()
-      expr = lowerArrayOps(expr, lowerMemo)
       return expr
     }
 
@@ -1164,9 +1161,7 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
     if (inst.gateable) {
       const raw = gateInputExprs.get(name)!
       const refsMemo = new WeakMap<object, ExprNode>()
-      let g = resolveRefs(raw, resolvedOutputs, resolvedOutputNames, refsMemo)
-      const lowerMemo = new WeakMap<object, ExprNode>()
-      g = lowerArrayOps(g, lowerMemo)
+      const g = resolveRefs(raw, resolvedOutputs, resolvedOutputNames, refsMemo)
       gateExpr = g
     }
 
@@ -1294,8 +1289,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
         expr = substituteInputs(expr, inputMap, nestedSubstMemo)
         const nestedRefsMemo = new WeakMap<object, ExprNode>()
         expr = resolveRefs(expr, resolvedOutputs, resolvedOutputNames, nestedRefsMemo)
-        const nestedLowerMemo = new WeakMap<object, ExprNode>()
-        expr = lowerArrayOps(expr, nestedLowerMemo)
         // Nested register is part of the owning instance's group; its flat id
         // is the current length of flatRegisterExprs *before* push, which
         // equals flatRegisterExprs.length right now.
@@ -1353,8 +1346,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
       expr = substituteInputs(expr, inputMap, substMemo)
       const refsMemo = new WeakMap<object, ExprNode>()
       expr = resolveRefs(expr, resolvedOutputs, resolvedOutputNames, refsMemo)
-      const lowerMemo = new WeakMap<object, ExprNode>()
-      expr = lowerArrayOps(expr, lowerMemo)
       return expr
     }
 
@@ -1425,8 +1416,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
         expr = substituteInputs(expr, inputMap, nestedSubstMemo)
         const nestedRefsMemo = new WeakMap<object, ExprNode>()
         expr = resolveRefs(expr, resolvedOutputs, resolvedOutputNames, nestedRefsMemo)
-        const nestedLowerMemo = new WeakMap<object, ExprNode>()
-        expr = lowerArrayOps(expr, nestedLowerMemo)
         flatRegisterExprs[regIdx] = expr
         regIdx++
       }
@@ -1440,9 +1429,7 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
   for (const d of sessionDelays) {
     if (d.rawUpdateExpr === null) continue
     const refsMemo  = new WeakMap<object, ExprNode>()
-    let expr = resolveRefs(d.rawUpdateExpr, resolvedOutputs, resolvedOutputNames, refsMemo)
-    const lowerMemo = new WeakMap<object, ExprNode>()
-    expr = lowerArrayOps(expr, lowerMemo)
+    const expr = resolveRefs(d.rawUpdateExpr, resolvedOutputs, resolvedOutputNames, refsMemo)
     flatRegisterExprs[d.regIdx] = expr
   }
 

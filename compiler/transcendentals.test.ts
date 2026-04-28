@@ -32,7 +32,8 @@ loadStdlib({
   paramRegistry: new Map<string, Param>(),
   triggerRegistry: new Map<string, Trigger>(),
   specializationCache: new Map<string, ProgramType>(),
-  genericTemplates: new Map(),
+  genericTemplatesResolved: new Map(),
+  resolvedRegistry: new Map(),
 })
 
 /**

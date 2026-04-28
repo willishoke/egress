@@ -27,9 +27,13 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { extractMarkdown } from './parse/markdown.js'
 import { parseProgram } from './parse/declarations.js'
+import { lowerProgram } from './parse/lower.js'
 import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
 import { strataPipeline } from './ir/strata.js'
+import { loadProgramDefFromResolved } from './ir/load.js'
+import { loadProgramAsType } from './program.js'
 import type { ResolvedProgram } from './ir/nodes.js'
+import type { ProgramDef, ProgramType } from './program_types.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -182,7 +186,113 @@ describe('phase C strata orchestrator — coverage summary', () => {
 })
 
 // ─────────────────────────────────────────────────────────────
-// Deferred: byte-equality against the legacy pipeline (Phase C2+)
+// Phase C2: byte-equality against the legacy pipeline
 // ─────────────────────────────────────────────────────────────
+//
+// For the trivial stdlib subset (programs that pass through the strata
+// orchestrator without throwing), build a `ProgramDef` via both paths
+// and compare field-by-field. The legacy path:
+//
+//   parse → lowerProgram → loadProgramAsType → ProgramType
+//
+// The new path:
+//
+//   parse → elaborate → loadProgramDefFromResolved → ProgramType
+//
+// Programs whose bounds depend on builtin port-type aliases (signal,
+// freq, unipolar, bipolar) hit a known divergence: the elaborator
+// resolves those names to ScalarKind and discards the bounds metadata
+// (`compiler/ir/elaborator.ts:88-95`). Reconstructing them in C2 would
+// require either threading the parsed source through or patching the
+// elaborator — both out of scope. Those programs stay skipped with an
+// explicit TODO; only programs whose bounds are either explicit or
+// uniformly `null` participate today.
 
-describe.todo('phase C dual-run byte-equality (enabled in C2)')
+/** SignalExpr unwrap: replace `{ _node, ... }` wrappers with their
+ *  underlying ExprNode. Mirrors the role normalize plays in
+ *  `compiler/parse/stdlib_round_trip.test.ts` (referenced by the C2
+ *  plan; the helper itself isn't centralised, so we inline a local
+ *  one here keyed on the `_node` shape). */
+function normalizeDef(def: ProgramDef): ProgramDef {
+  return JSON.parse(JSON.stringify(def, (_k, v) => {
+    if (v && typeof v === 'object' && !Array.isArray(v) && '_node' in v && Object.keys(v).length <= 3) {
+      return (v as { _node: unknown })._node
+    }
+    return v
+  })) as ProgramDef
+}
+
+function emptySession() {
+  return {
+    typeRegistry:        new Map<string, ProgramType>(),
+    instanceRegistry:    new Map(),
+    paramRegistry:       new Map(),
+    triggerRegistry:     new Map(),
+    specializationCache: new Map(),
+    genericTemplates:    new Map(),
+    typeAliasRegistry:   new Map(),
+  }
+}
+
+/** Programs whose legacy bounds depend on the discarded surface-alias
+ *  name. Skipped with an explicit reason; revisit when the elaborator
+ *  preserves the bounds metadata (a follow-up to C2, not a hard
+ *  prerequisite for any later strata phase). */
+const SURFACE_BOUNDS_DIVERGENT = new Set([
+  'CombDelay',  // input/output: signal → bounds [-1, 1] dropped
+  'CrossFade',  // a, b: signal; mix: unipolar → all bounds dropped
+])
+
+/** Generic programs that legacy stashes as templates (no ProgramDef
+ *  produced until specialization). Byte-equality requires running
+ *  Phase C3 specialize first; skipped until then. */
+const GENERIC_DEFERRED = new Set([
+  'Sequencer',  // type_param N
+])
+
+describe('phase C dual-run byte-equality (Phase C2)', () => {
+  for (const fx of FIXTURES) {
+    test(`byte-equal ProgramDef: ${fx.name}`, () => {
+      // Filter 1: programs that fail the strata orchestrator stay
+      // skipped pending C3-C6.
+      const probe = probeFixture(fx.name)
+      if (probe.kind === 'skip') {
+        expect(probe.reason).toMatch(/elaboration|Phase C/)
+        return
+      }
+      try {
+        strataPipeline(probe.resolved)
+      } catch (e: unknown) {
+        const msg = (e as Error).message
+        expect(msg).toMatch(/Phase C[3-6]/)
+        return
+      }
+
+      // Filter 2: divergences flagged above stay skipped with reason.
+      if (SURFACE_BOUNDS_DIVERGENT.has(fx.name)) {
+        // TODO: re-enable once the elaborator preserves builtin alias
+        // bounds (signal/freq/unipolar/bipolar).
+        return
+      }
+      if (GENERIC_DEFERRED.has(fx.name)) {
+        // TODO: re-enable post Phase C3 (specialize on the graph IR).
+        return
+      }
+
+      // Build via the legacy path.
+      const parsed = parseProgram(fx.source)
+      const legacyNode = lowerProgram(parsed)
+      const tLegacy = loadProgramAsType(legacyNode, emptySession())
+      if (tLegacy === undefined) {
+        // Generic programs return undefined; covered by GENERIC_DEFERRED.
+        return
+      }
+
+      // Build via the new path.
+      const tNew = loadProgramDefFromResolved(probe.resolved, emptySession())
+
+      // Field-by-field deep equality after SignalExpr → _node unwrap.
+      expect(normalizeDef(tNew._def)).toEqual(normalizeDef(tLegacy._def))
+    })
+  }
+})

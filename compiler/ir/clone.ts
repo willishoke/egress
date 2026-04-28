@@ -77,6 +77,13 @@ interface CloneTable {
    *  (the specialization root). Nested programs retain their own
    *  `typeParams` since this caller isn't substituting them. */
   rootProgram?: ResolvedProgram
+  /** Optional substitution map for Phase C5 inlineInstances: InputRef
+   *  whose decl is a key here is replaced by the corresponding
+   *  ResolvedExpr (from the wired-in expression at the outer site).
+   *  The substituted expression is in the *outer* program's namespace
+   *  and is not cloned again — it passes through by reference, which
+   *  preserves DAG sharing across multiple uses. */
+  inputSubst?: ReadonlyMap<InputDecl, ResolvedExpr>
 }
 
 function emptyTable(): CloneTable {
@@ -117,6 +124,27 @@ export function cloneWithSubst(
   const t = emptyTable()
   t.subst = subst
   t.rootProgram = prog
+  return cloneProgram(prog, t)
+}
+
+/**
+ * Clone-and-substitute-inputs. Used by Phase C5 (inlineInstances):
+ * produces a fresh `ResolvedProgram` with every `InputRef` whose decl
+ * is a key in `inputSubst` replaced by the wired-in expression from
+ * the outer site. The substituted expressions are in the outer's
+ * namespace and pass through by reference — they are NOT re-cloned,
+ * preserving DAG sharing and avoiding namespace confusion.
+ *
+ * The caller is expected to splice the cloned program's body into
+ * the outer program; the cloned `ports.inputs` and `ports.outputs`
+ * become orphaned post-splice (no longer referenced from anything).
+ */
+export function cloneWithInputSubst(
+  prog: ResolvedProgram,
+  inputSubst: ReadonlyMap<InputDecl, ResolvedExpr>,
+): ResolvedProgram {
+  const t = emptyTable()
+  t.inputSubst = inputSubst
   return cloneProgram(prog, t)
 }
 
@@ -361,6 +389,15 @@ function cloneExpr(e: ResolvedExpr, t: CloneTable): ResolvedExpr {
   // ref-clone treatment.
   if (t.subst !== undefined && e.op === 'typeParamRef') {
     const v = t.subst.get(e.decl)
+    if (v !== undefined) return v
+  }
+  // Inline-time substitution (Phase C5): an InputRef whose decl is a
+  // key in inputSubst collapses to the wired-in expression from the
+  // outer site. The substituted expression is already in the outer's
+  // namespace; pass it through by reference (preserves DAG sharing
+  // when the same input is used multiple times in the inner body).
+  if (t.inputSubst !== undefined && typeof e === 'object' && e.op === 'inputRef') {
+    const v = t.inputSubst.get(e.decl)
     if (v !== undefined) return v
   }
   return cloneOpNode(e, t)

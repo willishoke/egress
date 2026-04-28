@@ -136,7 +136,10 @@ describe('strata — throws on unsupported features', () => {
     expect(() => arrayLower(p)).toThrow(/Phase C6/)
   })
 
-  test('inlineInstances: program with InstanceDecl throws', () => {
+  test('inlineInstances: program with InstanceDecl returns an instance-free program', () => {
+    // Post-C5: inlineInstances splices the inner body into the outer
+    // and removes the InstanceDecl. The previously-skip path now
+    // exercises the inliner end-to-end on a one-deep program.
     const p = elab(`
       program X(a: signal) -> (out: signal) {
         program Inner(x: signal) -> (y: signal) { y = x + 1 }
@@ -144,6 +147,8 @@ describe('strata — throws on unsupported features', () => {
         out = inst.y
       }
     `)
-    expect(() => inlineInstances(p)).toThrow(/Phase C5/)
+    const out = inlineInstances(p)
+    // No InstanceDecl survives.
+    for (const d of out.body.decls) expect(d.op).not.toBe('instanceDecl')
   })
 })

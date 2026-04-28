@@ -327,6 +327,19 @@ describe('phase C dual-run byte-equality (Phase C2)', () => {
       // sum-typed programs land in scalar form before slot allocation.
       const tNew = loadProgramDefFromResolved(strataOut, emptySession())
 
+      // Phase C5 introduces a structural divergence for programs
+      // that use instances: the new pipeline inlines (lifts inner
+      // regs/delays into the outer, drops nestedCalls), while the
+      // legacy `loadProgramDef` retains `nestedCalls` and lets
+      // `flatten.ts` do the inlining at runtime. The two ProgramDefs
+      // therefore cannot be byte-equal even though they describe the
+      // same program — they differ in *where* the inlining happens
+      // (compile-time vs flatten-time). The real byte-equality gate
+      // (Phase C7) compares `tropical_plan_4` JSON, where both paths
+      // converge. Until that gate exists, programs whose legacy
+      // ProgramDef has nestedCalls are skipped from this comparison.
+      if (tLegacy._def.nestedCalls.length > 0) return
+
       // Field-by-field deep equality after SignalExpr → _node unwrap.
       expect(normalizeDef(tNew._def)).toEqual(normalizeDef(tLegacy._def))
     })

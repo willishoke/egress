@@ -66,6 +66,17 @@ interface CloneTable {
    *  `ProgramDecl.program`). Memoized so two instances of the same
    *  nested program share the cloned program object. */
   nestedPrograms: Map<ResolvedProgram, ResolvedProgram>
+  /** Optional substitution map for Phase C3 specialize: TypeParamRef
+   *  in expression position and TypeParamDecl in ShapeDim position
+   *  whose decl is a key here are rewritten to the corresponding
+   *  integer. Refs whose decl is NOT in subst are passed through —
+   *  they belong to a nested program's own type-params that this
+   *  caller is not specializing. */
+  subst?: ReadonlyMap<TypeParamDecl, number>
+  /** The program whose `typeParams` should be emptied in the clone
+   *  (the specialization root). Nested programs retain their own
+   *  `typeParams` since this caller isn't substituting them. */
+  rootProgram?: ResolvedProgram
 }
 
 function emptyTable(): CloneTable {
@@ -91,6 +102,24 @@ export function cloneResolvedProgram(prog: ResolvedProgram): ResolvedProgram {
   return cloneProgram(prog, emptyTable())
 }
 
+/**
+ * Clone-and-substitute. Used by Phase C3 (specialize): produces a fresh
+ * `ResolvedProgram` with every `TypeParamRef` whose decl is a key in
+ * `subst` replaced by the corresponding integer literal, and every
+ * `ShapeDim` that's a `TypeParamDecl` likewise. The root program's
+ * `typeParams` list is emptied; nested programs retain their own
+ * type-params (this caller is only specializing the root).
+ */
+export function cloneWithSubst(
+  prog: ResolvedProgram,
+  subst: ReadonlyMap<TypeParamDecl, number>,
+): ResolvedProgram {
+  const t = emptyTable()
+  t.subst = subst
+  t.rootProgram = prog
+  return cloneProgram(prog, t)
+}
+
 function cloneProgram(prog: ResolvedProgram, t: CloneTable): ResolvedProgram {
   const cached = t.nestedPrograms.get(prog)
   if (cached) return cached
@@ -109,7 +138,15 @@ function cloneProgram(prog: ResolvedProgram, t: CloneTable): ResolvedProgram {
   t.nestedPrograms.set(prog, shell)
 
   // Type-params first — port types and decl init exprs may reference them.
-  shell.typeParams = prog.typeParams.map(tp => cloneTypeParamDecl(tp, t))
+  // Specialization root: drop the typeParams (substitution will replace
+  // every reference to them; their decls have no purpose post-clone).
+  // Nested programs retain their typeParams unchanged — they're not what
+  // this caller is specializing.
+  if (t.rootProgram === prog) {
+    shell.typeParams = []
+  } else {
+    shell.typeParams = prog.typeParams.map(tp => cloneTypeParamDecl(tp, t))
+  }
 
   // Inputs and outputs.
   shell.ports = {
@@ -303,6 +340,10 @@ function clonePortType(pt: PortType, t: CloneTable): PortType {
 
 function cloneShapeDim(d: ShapeDim, t: CloneTable): ShapeDim {
   if (typeof d === 'number') return d
+  if (t.subst !== undefined) {
+    const v = t.subst.get(d)
+    if (v !== undefined) return v
+  }
   return cloneTypeParamDecl(d, t)
 }
 
@@ -313,6 +354,15 @@ function cloneShapeDim(d: ShapeDim, t: CloneTable): ShapeDim {
 function cloneExpr(e: ResolvedExpr, t: CloneTable): ResolvedExpr {
   if (typeof e === 'number' || typeof e === 'boolean') return e
   if (Array.isArray(e)) return e.map(x => cloneExpr(x, t))
+  // Specialize-time substitution: a TypeParamRef whose decl is a key
+  // in the subst map collapses to the integer literal. Refs whose decl
+  // is NOT in subst (i.e., the decl belongs to a nested program's own
+  // type-params) pass through to cloneOpNode, where they get the usual
+  // ref-clone treatment.
+  if (t.subst !== undefined && e.op === 'typeParamRef') {
+    const v = t.subst.get(e.decl)
+    if (v !== undefined) return v
+  }
   return cloneOpNode(e, t)
 }
 

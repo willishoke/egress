@@ -57,11 +57,14 @@ describe('strata — pass-through on trivial programs', () => {
 })
 
 describe('strata — throws on unsupported features', () => {
-  test('specialize: non-empty type-args throws', () => {
+  test('specialize: type-arg keyed by an undeclared TypeParamDecl throws', () => {
+    // C3 implementation: passing an arg whose key is not one of the
+    // program's declared type-params is an error (replaces the C1 stub
+    // behavior of "any non-empty args throws").
     const p = elab(TRIVIAL)
     const fakeDecl: TypeParamDecl = { op: 'typeParamDecl', name: 'N' }
     const args = new Map<TypeParamDecl, number>([[fakeDecl, 4]])
-    expect(() => specializeProgram(p, args)).toThrow(/Phase C3/)
+    expect(() => specializeProgram(p, args)).toThrow(/not a declared type-param/)
   })
 
   test('sumLower: program with sum type throws', () => {

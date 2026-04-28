@@ -32,7 +32,10 @@ import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
 import { strataPipeline } from './ir/strata.js'
 import { loadProgramDefFromResolved } from './ir/load.js'
 import { loadProgramAsType } from './program.js'
-import type { ResolvedProgram } from './ir/nodes.js'
+import { loadProgramDef } from './session.js'
+import { specializeProgramNode } from './specialize.js'
+import { specializeProgram } from './ir/specialize.js'
+import type { ResolvedProgram, TypeParamDecl } from './ir/nodes.js'
 import type { ProgramDef, ProgramType } from './program_types.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -234,12 +237,37 @@ function emptySession() {
   }
 }
 
-/** Generic programs that legacy stashes as templates (no ProgramDef
- *  produced until specialization). Byte-equality requires running
- *  Phase C3 specialize first; skipped until then. */
-const GENERIC_DEFERRED = new Set([
-  'Sequencer',  // type_param N
-])
+/** Generic programs (with `type_params`). For these the dual-run gate
+ *  has to specialize on both sides with matching args before comparing
+ *  ProgramDefs. We use the declared defaults — every stdlib generic
+ *  carries a default for every type-param, by convention. */
+const GENERIC_DEFAULT_ARGS: Record<string, Record<string, number>> = {
+  // Sequencer is generic in N (default 8). C3 substitution itself works,
+  // but byte-equality against the legacy path still fails because the
+  // legacy emits substituted type-params as `{op:'const', type:'int', val}`
+  // (carrying the declared param type), while the new path emits a bare
+  // numeric literal. The resolved IR doesn't track scalar-typedness on
+  // literals; reconstructing the legacy shape would require touching
+  // loadProgramDefFromResolved (Phase C2's territory), not specialize.
+  // Skipped here pending a load.ts fix or a C7-time decision to drop
+  // the typed-const wrapping in the legacy emit.
+  // Sequencer: { N: 8 },
+}
+
+/** Build a ResolvedProgram TypeParamDecl-keyed map from a name-keyed
+ *  args record by looking up each name in `prog.typeParams`. */
+function resolvedArgs(
+  prog: ResolvedProgram,
+  byName: Record<string, number>,
+): Map<TypeParamDecl, number> {
+  const m = new Map<TypeParamDecl, number>()
+  for (const [name, value] of Object.entries(byName)) {
+    const decl = prog.typeParams.find(p => p.name === name)
+    if (!decl) throw new Error(`phase_c_equiv: program '${prog.name}' has no type-param '${name}'`)
+    m.set(decl, value)
+  }
+  return m
+}
 
 describe('phase C dual-run byte-equality (Phase C2)', () => {
   for (const fx of FIXTURES) {
@@ -259,8 +287,29 @@ describe('phase C dual-run byte-equality (Phase C2)', () => {
         return
       }
 
-      // Filter 2: generics deferred until C3 specialize lands.
-      if (GENERIC_DEFERRED.has(fx.name)) {
+      // Generic programs require specialization on both sides before
+      // a byte-equality comparison is meaningful. The legacy path
+      // returns `undefined` from `loadProgramAsType` for generics; the
+      // new path fails inside `loadProgramDefFromResolved` because
+      // unsubstituted shape dims throw. So we run specialize first
+      // when the program is generic.
+      if (probe.resolved.typeParams.length > 0) {
+        const specArgs = GENERIC_DEFAULT_ARGS[fx.name]
+        if (!specArgs) {
+          // No spec args registered for this generic — skip until the
+          // test author adds them. Surface a clear reason rather than
+          // silently failing on `undefined` legacy output.
+          return
+        }
+        // Legacy: specialize the lowered ProgramNode, then loadProgramDef.
+        const parsed = parseProgram(fx.source)
+        const legacyNode = lowerProgram(parsed)
+        const legacySpec = specializeProgramNode(legacyNode, specArgs)
+        const tLegacy = loadProgramDef(legacySpec, emptySession())
+        // New: specialize the resolved program, then loadProgramDefFromResolved.
+        const newSpec = specializeProgram(probe.resolved, resolvedArgs(probe.resolved, specArgs))
+        const tNew = loadProgramDefFromResolved(newSpec, emptySession())
+        expect(normalizeDef(tNew._def)).toEqual(normalizeDef(tLegacy._def))
         return
       }
 
@@ -269,8 +318,8 @@ describe('phase C dual-run byte-equality (Phase C2)', () => {
       const legacyNode = lowerProgram(parsed)
       const tLegacy = loadProgramAsType(legacyNode, emptySession())
       if (tLegacy === undefined) {
-        // Generic programs return undefined; covered by GENERIC_DEFERRED.
-        return
+        // Should not happen now that generics take the branch above.
+        throw new Error(`legacy path returned undefined for non-generic '${fx.name}'`)
       }
 
       // Build via the new path.

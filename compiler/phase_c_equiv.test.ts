@@ -34,7 +34,6 @@ import { loadProgramDefFromResolved } from './ir/load.js'
 import { loadProgramAsType } from './program.js'
 import { loadProgramDef } from './session.js'
 import { specializeProgramNode } from './specialize.js'
-import { specializeProgram } from './ir/specialize.js'
 import type { ResolvedProgram, TypeParamDecl } from './ir/nodes.js'
 import type { ProgramDef, ProgramType } from './program_types.js'
 
@@ -279,8 +278,9 @@ describe('phase C dual-run byte-equality (Phase C2)', () => {
         expect(probe.reason).toMatch(/elaboration|Phase C/)
         return
       }
+      let strataOut: ResolvedProgram
       try {
-        strataPipeline(probe.resolved)
+        strataOut = strataPipeline(probe.resolved)
       } catch (e: unknown) {
         const msg = (e as Error).message
         expect(msg).toMatch(/Phase C[3-6]/)
@@ -306,8 +306,8 @@ describe('phase C dual-run byte-equality (Phase C2)', () => {
         const legacyNode = lowerProgram(parsed)
         const legacySpec = specializeProgramNode(legacyNode, specArgs)
         const tLegacy = loadProgramDef(legacySpec, emptySession())
-        // New: specialize the resolved program, then loadProgramDefFromResolved.
-        const newSpec = specializeProgram(probe.resolved, resolvedArgs(probe.resolved, specArgs))
+        // New: run the strata pipeline with the args, then loadProgramDefFromResolved.
+        const newSpec = strataPipeline(probe.resolved, resolvedArgs(probe.resolved, specArgs))
         const tNew = loadProgramDefFromResolved(newSpec, emptySession())
         expect(normalizeDef(tNew._def)).toEqual(normalizeDef(tLegacy._def))
         return
@@ -322,8 +322,10 @@ describe('phase C dual-run byte-equality (Phase C2)', () => {
         throw new Error(`legacy path returned undefined for non-generic '${fx.name}'`)
       }
 
-      // Build via the new path.
-      const tNew = loadProgramDefFromResolved(probe.resolved, emptySession())
+      // Build via the new path. `strataOut` already has sumLower /
+      // traceCycles / etc. applied; for the C4 corpus that means
+      // sum-typed programs land in scalar form before slot allocation.
+      const tNew = loadProgramDefFromResolved(strataOut, emptySession())
 
       // Field-by-field deep equality after SignalExpr → _node unwrap.
       expect(normalizeDef(tNew._def)).toEqual(normalizeDef(tLegacy._def))

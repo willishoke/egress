@@ -22,6 +22,26 @@ function elab(src: string): ResolvedProgram {
   return elaborate(parseProgram(src))
 }
 
+/** Walk a resolved object graph (cycle-safe) and return every `op` field
+ *  matching `targets`. Used to assert that a pass eliminated certain ops
+ *  (e.g. sumLower drops every `tag`/`match`). */
+function findOps(root: unknown, targets: string[]): string[] {
+  const set = new Set(targets)
+  const out: string[] = []
+  const seen = new WeakSet<object>()
+  const walk = (v: unknown): void => {
+    if (v === null || typeof v !== 'object') return
+    if (seen.has(v as object)) return
+    seen.add(v as object)
+    if (Array.isArray(v)) { v.forEach(walk); return }
+    const o = v as Record<string, unknown>
+    if (typeof o.op === 'string' && set.has(o.op)) out.push(o.op)
+    for (const k of Object.keys(o)) walk(o[k])
+  }
+  walk(root)
+  return out
+}
+
 const TRIVIAL = 'program X(a: signal) -> (out: signal) { reg s: float = 0  out = s + a  next s = a }'
 
 describe('strata — pass-through on trivial programs', () => {
@@ -67,14 +87,35 @@ describe('strata — throws on unsupported features', () => {
     expect(() => specializeProgram(p, args)).toThrow(/not a declared type-param/)
   })
 
-  test('sumLower: program with sum type throws', () => {
+  test('sumLower: program declaring an unused sum type returns unchanged', () => {
+    // A sum type that isn't used by any delay/match/tag is an identity
+    // for sumLower: nothing to decompose, no expressions to rewrite.
     const p = elab(`
       program X(t: signal) -> (out: signal) {
         enum S { A, B }
         out = 0
       }
     `)
-    expect(() => sumLower(p)).toThrow(/Phase C4/)
+    expect(sumLower(p)).toBe(p)
+  })
+
+  test('sumLower: lowers a Toggle-style match over a sum-typed delay', () => {
+    const p = elab(`
+      program Toggle() -> (value: float) {
+        enum St { Off, On }
+        delay state: St = match state { Off => On { }, On => Off { } } init Off { }
+        value = match state { Off => 0.0, On => 1.0 }
+      }
+    `)
+    const out = sumLower(p)
+    // No tag/match expressions remain anywhere in the rewritten body.
+    expect(findOps(out, ['match', 'tag'])).toEqual([])
+    // The sum-typed delay decomposes into a single tag-slot delay
+    // (no payload variants → just the discriminator).
+    expect(out.body.decls.length).toBe(1)
+    const d = out.body.decls[0]
+    expect(d.op).toBe('delayDecl')
+    if (d.op === 'delayDecl') expect(d.name).toBe('state#tag')
   })
 
   test('arrayLower: program with let combinator throws', () => {

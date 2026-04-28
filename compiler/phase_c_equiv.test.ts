@@ -27,7 +27,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { extractMarkdown } from './parse/markdown.js'
 import { parseProgram } from './parse/declarations.js'
-import { elaborate } from './ir/elaborator.js'
+import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
 import { strataPipeline } from './ir/strata.js'
 import type { ResolvedProgram } from './ir/nodes.js'
 
@@ -54,29 +54,71 @@ function loadStdlibFixtures(): Fixture[] {
     })
 }
 
-/** Probe the parsed/elaborated form to decide whether the stratum
- *  pipeline can run on it today. Returns null on success, or a
- *  reason string naming the missing stratum/feature. */
-function probeFixture(src: string): { kind: 'ok'; resolved: ResolvedProgram } | { kind: 'skip'; reason: string } {
-  // Elaboration may itself reject programs that reference external
-  // (non-nested) program types; the elaborator throws ElaborationError
-  // for those today. From the strata pipeline's perspective those
-  // programs aren't even reachable, so we skip them.
-  let resolved: ResolvedProgram
-  try {
-    resolved = elaborate(parseProgram(src))
-  } catch (e: unknown) {
-    return { kind: 'skip', reason: `elaboration: ${(e as Error).message}` }
+/** Build a dependency-ordered registry of elaborated stdlib programs.
+ *
+ *  Stdlib programs reference each other (e.g. OnePole instantiates Tanh).
+ *  The elaborator can't elaborate OnePole until Tanh exists as a
+ *  ResolvedProgram, so we make multiple passes: each pass elaborates the
+ *  programs whose external references can be resolved by the registry
+ *  built so far. We continue until a pass makes no progress; remaining
+ *  unresolved programs are recorded as failures. */
+function elaborateStdlib(fixtures: Fixture[]): {
+  resolved: Map<string, ResolvedProgram>
+  failures: Map<string, string>
+} {
+  const resolved = new Map<string, ResolvedProgram>()
+  const failures = new Map<string, string>()
+  const remaining = new Map(fixtures.map(f => [f.name, f]))
+
+  const resolver: ExternalProgramResolver = name => resolved.get(name)
+
+  // Fixed-point iteration: each pass tries to elaborate the remaining
+  // fixtures; ones that succeed land in `resolved`, ones that fail stay
+  // queued. Stop when a pass makes no progress.
+  let progress = true
+  while (progress) {
+    progress = false
+    for (const [name, fx] of remaining) {
+      try {
+        const r = elaborate(parseProgram(fx.source), resolver)
+        resolved.set(name, r)
+        remaining.delete(name)
+        progress = true
+      } catch {
+        // Try again next pass — a sibling we haven't elaborated yet may
+        // have provided what this one needed. The error message is
+        // captured only when no further progress is possible.
+      }
+    }
   }
-  return { kind: 'ok', resolved }
+  // Whatever stayed in `remaining` is a hard failure.
+  for (const [name, fx] of remaining) {
+    try {
+      elaborate(parseProgram(fx.source), resolver)
+    } catch (e: unknown) {
+      failures.set(name, (e as Error).message)
+    }
+  }
+  return { resolved, failures }
 }
 
 const FIXTURES = loadStdlibFixtures()
+const STDLIB_REGISTRY = elaborateStdlib(FIXTURES)
+
+/** Probe a fixture's resolved form. With the staged registry above,
+ *  every stdlib program should land in `resolved` post Phase C1.5;
+ *  anything left in `failures` is a regression. */
+function probeFixture(name: string): { kind: 'ok'; resolved: ResolvedProgram } | { kind: 'skip'; reason: string } {
+  const r = STDLIB_REGISTRY.resolved.get(name)
+  if (r) return { kind: 'ok', resolved: r }
+  const reason = STDLIB_REGISTRY.failures.get(name) ?? 'no resolved entry'
+  return { kind: 'skip', reason: `elaboration: ${reason}` }
+}
 
 describe('phase C strata orchestrator — stdlib smoke', () => {
   for (const fx of FIXTURES) {
     test(`strataPipeline runs (or skips with reason): ${fx.name}`, () => {
-      const probe = probeFixture(fx.source)
+      const probe = probeFixture(fx.name)
       if (probe.kind === 'skip') {
         // Recorded as a passing test; the skip reason is the TODO.
         // We deliberately don't `test.skip` here because the skip
@@ -109,7 +151,7 @@ describe('phase C strata orchestrator — coverage summary', () => {
     const passed: string[] = []
     const skipped: Array<{ name: string; reason: string }> = []
     for (const fx of FIXTURES) {
-      const probe = probeFixture(fx.source)
+      const probe = probeFixture(fx.name)
       if (probe.kind === 'skip') {
         skipped.push({ name: fx.name, reason: probe.reason.split('\n')[0] })
         continue
@@ -128,6 +170,14 @@ describe('phase C strata orchestrator — coverage summary', () => {
     // candidates depending on combinator usage.)
     // If this assertion fails, the strata stubs are too strict.
     expect(passed.length + skipped.length).toBeGreaterThan(0)
+  })
+
+  test('every stdlib program elaborates after Phase C1.5', () => {
+    // With the resolver wired and let* + builtins fixed, every stdlib
+    // program should reach a ResolvedProgram. Anything that lands in
+    // `failures` indicates a regression in the elaborator.
+    expect([...STDLIB_REGISTRY.failures.entries()]).toEqual([])
+    expect(STDLIB_REGISTRY.resolved.size).toBe(FIXTURES.length)
   })
 })
 

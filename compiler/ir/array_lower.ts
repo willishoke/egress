@@ -64,6 +64,9 @@ function opNodeUsesArrayOrCombinator(node: ResolvedExprOpNode): boolean {
     case 'fold': case 'scan': case 'generate': case 'iterate':
     case 'chain': case 'map2': case 'zipWith': case 'let':
       return true
+    // Array ops produce/consume array-shaped values — C6 lowers them.
+    case 'zeros': case 'arraySet':
+      return true
     case 'inputRef': case 'regRef': case 'delayRef': case 'paramRef':
     case 'typeParamRef': case 'bindingRef': case 'nestedOut':
     case 'sampleRate': case 'sampleIndex':
@@ -78,6 +81,7 @@ function opNodeUsesArrayOrCombinator(node: ResolvedExprOpNode): boolean {
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
+    case 'pow': case 'floorDiv': case 'ldexp':
     case 'neg': case 'not': case 'bitNot':
     case 'sqrt': case 'abs': case 'floor': case 'ceil': case 'round':
     case 'floatExponent': case 'toInt': case 'toBool': case 'toFloat':

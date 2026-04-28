@@ -11,7 +11,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { parseProgram } from '../parse/declarations.js'
-import { elaborate } from './elaborator.js'
+import { elaborate, type ExternalProgramResolver } from './elaborator.js'
 import { ElaborationError } from './nodes.js'
 import type {
   ResolvedProgram, ResolvedExpr, ResolvedExprOpNode,
@@ -21,6 +21,7 @@ import type {
   RegDecl, DelayDecl, ParamDecl, InputDecl, TypeParamDecl,
   InstanceDecl, ProgramDecl, OutputAssign, NextUpdate,
   SumTypeDef, AliasTypeDef,
+  ZerosNode, ArraySetNode,
 } from './nodes.js'
 
 function elabSrc(src: string): ResolvedProgram {
@@ -665,6 +666,209 @@ describe('elaborator — graph integrity', () => {
     expect(next.target).toBe(regDecl)
     const expr = next.expr as BinaryOpNode
     expect((expr.args[0] as RegRef).decl).toBe(regDecl)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// External program resolver (Phase C1.5)
+// ─────────────────────────────────────────────────────────────
+
+describe('elaborator — external program resolver', () => {
+  test('resolver supplies a program type that is not nested', () => {
+    // Elaborate Inner first, then feed it to a sibling program that
+    // instantiates it without declaring it as a nested programDecl.
+    const inner = elabSrc(`
+      program Inner(x: signal = 0) -> (y: signal) { y = x }
+    `)
+    const resolver: ExternalProgramResolver = name =>
+      name === 'Inner' ? inner : undefined
+    const outer = elaborate(parseProgram(`
+      program Outer() -> (out: signal) {
+        i = Inner(x: 1)
+        out = i.y
+      }
+    `), resolver)
+    const inst = outer.body.decls[0] as InstanceDecl
+    expect(inst.op).toBe('instanceDecl')
+    // The instance's program type IS the externally-supplied object.
+    expect(inst.type).toBe(inner)
+    expect(inst.inputs[0].port).toBe(inner.ports.inputs[0])
+  })
+
+  test('resolver returns undefined → instance error mentions resolver', () => {
+    const resolver: ExternalProgramResolver = () => undefined
+    expect(() => elaborate(parseProgram(`
+      program Outer() -> (out: signal) {
+        i = Missing(x: 1)
+        out = i.y
+      }
+    `), resolver)).toThrow(/no external resolver provided/)
+  })
+
+  test('without resolver, external instance still errors as before', () => {
+    expect(() => elabSrc(`
+      program Outer() -> (out: signal) {
+        i = NotDeclared()
+        out = 0
+      }
+    `)).toThrow(/program type 'NotDeclared' is not a nested program/)
+  })
+
+  test('nested programs inherit the resolver from the enclosing scope', () => {
+    // The inner program also gets the same resolver — instances inside
+    // a nested programDecl can reach external program types.
+    const sib = elabSrc(`
+      program Sib(x: signal = 0) -> (y: signal) { y = x }
+    `)
+    const resolver: ExternalProgramResolver = name =>
+      name === 'Sib' ? sib : undefined
+    const outer = elaborate(parseProgram(`
+      program Outer() -> (out: signal) {
+        program Wrap(z: signal = 0) -> (w: signal) {
+          inner = Sib(x: z)
+          w = inner.y
+        }
+        wrapped = Wrap(z: 1)
+        out = wrapped.w
+      }
+    `), resolver)
+    const wrap = (outer.body.decls[0] as ProgramDecl).program
+    const innerInst = wrap.body.decls[0] as InstanceDecl
+    expect(innerInst.type).toBe(sib)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Sequential let* (Phase C1.5)
+// ─────────────────────────────────────────────────────────────
+
+describe('elaborator — sequential let* binding', () => {
+  test('a later binder may reference an earlier one in the same let', () => {
+    // This shape is used by stdlib (Tanh, Exp, Sin); the older parallel
+    // semantics rejected it as `unknown name 'c'`.
+    const p = elabSrc(`
+      program X(x: signal) -> (out: signal) {
+        out = let { c: x + 1; c2: c * c } in c2
+      }
+    `)
+    const letExpr = (p.body.assigns[0] as OutputAssign).expr as LetExpr
+    const cBinder = letExpr.binders[0].binder
+    const c2Value = letExpr.binders[1].value as BinaryOpNode
+    // c2's value is `c * c` — both operands reference the c binder.
+    expect(c2Value.op).toBe('mul')
+    const lhs = c2Value.args[0] as BindingRef
+    const rhs = c2Value.args[1] as BindingRef
+    expect(lhs.decl).toBe(cBinder)
+    expect(rhs.decl).toBe(cBinder)
+  })
+
+  test('the body sees every binder in the let block', () => {
+    const p = elabSrc(`
+      program X(x: signal) -> (out: signal) {
+        out = let { a: x; b: a + 1; c: b + 1 } in a + b + c
+      }
+    `)
+    const letExpr = (p.body.assigns[0] as OutputAssign).expr as LetExpr
+    expect(letExpr.binders.length).toBe(3)
+    // No throw on `a`, `b`, `c` in the body — that's the assertion.
+    expect(letExpr.in).toBeDefined()
+  })
+
+  test('binder shadowing in let* still restores the prior binder afterwards', () => {
+    // Construct a scenario where the same name is used in nested lets
+    // and verify the inner binder is distinct from the outer.
+    const p = elabSrc(`
+      program X(x: signal) -> (out: signal) {
+        out = let { a: x } in let { a: a + 1 } in a
+      }
+    `)
+    const outer = (p.body.assigns[0] as OutputAssign).expr as LetExpr
+    const outerA = outer.binders[0].binder
+    const inner = outer.in as LetExpr
+    const innerA = inner.binders[0].binder
+    // The inner let's value reads `a` — the outer binder, since the
+    // inner binder isn't in scope until after its value is resolved.
+    const innerValue = inner.binders[0].value as BinaryOpNode
+    const ref = innerValue.args[0] as BindingRef
+    expect(ref.decl).toBe(outerA)
+    // The body of the inner let sees the inner binder.
+    const body = inner.in as BindingRef
+    expect(body.decl).toBe(innerA)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// New builtins (Phase C1.5)
+// ─────────────────────────────────────────────────────────────
+
+describe('elaborator — new builtin calls', () => {
+  test('camelCase sampleRate / sampleIndex resolve to the same nodes as snake_case', () => {
+    const p = elabSrc(`
+      program X() -> (out: signal) { out = sampleRate() + sampleIndex() }
+    `)
+    const expr = (p.body.assigns[0] as OutputAssign).expr as BinaryOpNode
+    expect(expr.op).toBe('add')
+    const argOps = expr.args.map(a => (a as ResolvedExprOpNode).op).sort()
+    expect(argOps).toEqual(['sampleIndex', 'sampleRate'])
+  })
+
+  test('floatExponent (camelCase) resolves to UnaryOpNode', () => {
+    const p = elabSrc(`
+      program X(x: signal) -> (out: signal) { out = floatExponent(x) }
+    `)
+    const expr = (p.body.assigns[0] as OutputAssign).expr as { op: string }
+    expect(expr.op).toBe('floatExponent')
+  })
+
+  test('pow / floorDiv / ldexp resolve to BinaryOpNodes', () => {
+    const p = elabSrc(`
+      program X(a: signal, b: signal) -> (out: signal) {
+        out = pow(a, b) + floorDiv(a, b) + ldexp(a, b)
+      }
+    `)
+    // out = ((pow + floorDiv) + ldexp); walk for the three op tags.
+    const tags: string[] = []
+    walk((p.body.assigns[0] as OutputAssign).expr, (obj) => {
+      const op = (obj as { op?: string }).op
+      if (op === 'pow' || op === 'floorDiv' || op === 'ldexp') tags.push(op)
+    })
+    expect(tags.sort()).toEqual(['floorDiv', 'ldexp', 'pow'])
+  })
+
+  test('zeros(n) resolves to ZerosNode with the count expr', () => {
+    const p = elabSrc(`
+      program X<N: int = 4>() -> (out: float[N]) {
+        reg buf: float = 0
+        out = 0
+        next buf = zeros(N)
+      }
+    `)
+    const next = p.body.assigns[1] as NextUpdate
+    const z = next.expr as ZerosNode
+    expect(z.op).toBe('zeros')
+    const ref = z.count as TypeParamRef
+    expect(ref.op).toBe('typeParamRef')
+    expect(ref.decl).toBe(p.typeParams[0])
+  })
+
+  test('arraySet(arr, idx, val) resolves to ArraySetNode with three args', () => {
+    const p = elabSrc(`
+      program X<N: int = 4>(x = 0) -> (y) {
+        reg buf: float = 0
+        y = 0
+        next buf = arraySet(buf, sampleIndex() % N, x)
+      }
+    `)
+    const next = p.body.assigns[1] as NextUpdate
+    const a = next.expr as ArraySetNode
+    expect(a.op).toBe('arraySet')
+    expect(a.args.length).toBe(3)
+  })
+
+  test('binary builtin wrong arity errors', () => {
+    expect(() => elabSrc(`
+      program X(a: signal) -> (out: signal) { out = pow(a) }
+    `)).toThrow(/'pow' takes 2 arguments/)
   })
 })
 

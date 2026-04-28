@@ -459,7 +459,8 @@ function cloneOpNode(node: ResolvedExprOpNode, t: CloneTable): ResolvedExprOpNod
     case 'add': case 'sub': case 'mul': case 'div': case 'mod':
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
-    case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift': {
+    case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
+    case 'pow': case 'floorDiv': case 'ldexp': {
       return {
         op: node.op,
         args: [cloneExpr(node.args[0], t), cloneExpr(node.args[1], t)],
@@ -470,7 +471,7 @@ function cloneOpNode(node: ResolvedExprOpNode, t: CloneTable): ResolvedExprOpNod
     case 'floatExponent': case 'toInt': case 'toBool': case 'toFloat': {
       return { op: node.op, args: [cloneExpr(node.args[0], t)] }
     }
-    case 'clamp': case 'select': {
+    case 'clamp': case 'select': case 'arraySet': {
       return {
         op: node.op,
         args: [
@@ -485,6 +486,9 @@ function cloneOpNode(node: ResolvedExprOpNode, t: CloneTable): ResolvedExprOpNod
         op: 'index',
         args: [cloneExpr(node.args[0], t), cloneExpr(node.args[1], t)],
       }
+    }
+    case 'zeros': {
+      return { op: 'zeros', count: cloneExpr(node.count, t) }
     }
   }
 }

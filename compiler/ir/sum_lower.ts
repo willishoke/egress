@@ -81,15 +81,20 @@ function opNodeUsesSumExpr(node: ResolvedExprOpNode): boolean {
       return exprUsesSumExpr(node.a) || exprUsesSumExpr(node.b) || exprUsesSumExpr(node.body)
     case 'let':
       return node.binders.some(b => exprUsesSumExpr(b.value)) || exprUsesSumExpr(node.in)
-    // Binary / unary / clamp / select / index — uniform `args` shape.
+    // Binary / unary / clamp / select / index / arraySet — uniform
+    // `args` shape.
     case 'add': case 'sub': case 'mul': case 'div': case 'mod':
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
+    case 'pow': case 'floorDiv': case 'ldexp':
     case 'neg': case 'not': case 'bitNot':
     case 'sqrt': case 'abs': case 'floor': case 'ceil': case 'round':
     case 'floatExponent': case 'toInt': case 'toBool': case 'toFloat':
     case 'clamp': case 'select': case 'index':
+    case 'arraySet':
       return node.args.some(exprUsesSumExpr)
+    case 'zeros':
+      return exprUsesSumExpr(node.count)
   }
 }

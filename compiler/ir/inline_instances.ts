@@ -59,6 +59,7 @@ import type {
   FoldExpr, ScanExpr, GenerateExpr, IterateExpr, ChainExpr, Map2Expr, ZipWithExpr,
 } from './nodes.js'
 import { specializeProgram } from './specialize.js'
+import { sumLower } from './sum_lower.js'
 import { cloneResolvedProgram, cloneWithInputSubst } from './clone.js'
 
 export function inlineInstances(prog: ResolvedProgram): ResolvedProgram {
@@ -168,10 +169,22 @@ function inlineOneInstance(
   //    instance's program is already concrete.
   const specialized = specializeInner(decl)
 
-  // 2. Recursively inline sub-instances inside the specialized inner.
-  //    Depth-first, bottom-up: by the time we splice the inner's body
-  //    here, it has zero InstanceDecls of its own.
-  const flattened = inlineInstances(specialized)
+  // 2a. Lower sums in the specialized inner BEFORE recursing into
+  //     deeper instances or lifting decls. The strata pipeline runs
+  //     sumLower before inlineInstances on the *outer* program; the
+  //     same ordering must hold per-instance, otherwise a sum-typed
+  //     delay inside an inlined inner program (e.g. EnvExpDecay's
+  //     `state` when used inside Bubble) leaks into the outer in its
+  //     unlowered form, and the slot table built by
+  //     `loadProgramDefFromResolved` rejects the residual sum-typed
+  //     decl. sumLower is an identity on programs without sums.
+  const summed = sumLower(specialized)
+
+  // 2b. Recursively inline sub-instances inside the (specialized,
+  //     sum-lowered) inner. Depth-first, bottom-up: by the time we
+  //     splice the inner's body here, it has zero InstanceDecls of
+  //     its own.
+  const flattened = inlineInstances(summed)
 
   // 3. Build the input substitution map from the wired-in expressions.
   //    Each entry pairs an inner InputDecl with the outer's wired

@@ -118,22 +118,30 @@ describe('strata — throws on unsupported features', () => {
     if (d.op === 'delayDecl') expect(d.name).toBe('state#tag')
   })
 
-  test('arrayLower: program with let combinator throws', () => {
+  test('arrayLower: program with let combinator returns a let-free program', () => {
+    // Post-C6: arrayLower unrolls the let into the body, no `let` op
+    // and no `bindingRef` remain.
     const p = elab(`
       program X(a: signal) -> (out: signal) {
         out = let { y: a + 1 } in y * 2
       }
     `)
-    expect(() => arrayLower(p)).toThrow(/Phase C6/)
+    const out = arrayLower(p)
+    expect(findOps(out, ['let', 'bindingRef'])).toEqual([])
   })
 
-  test('arrayLower: program with array literal throws', () => {
+  test('arrayLower: program with fold over inline array returns a fold-free program', () => {
+    // Post-C6: arrayLower unrolls the fold; no `fold` op and no
+    // `bindingRef` remain. The inline array literal `[1, 2, 3]` is
+    // consumed by the fold during unrolling — the resulting body is
+    // a chain of `add` ops over numeric literals.
     const p = elab(`
       program X() -> (out: signal) {
         out = fold([1.0, 2.0, 3.0], 0, (a, c) => a + c)
       }
     `)
-    expect(() => arrayLower(p)).toThrow(/Phase C6/)
+    const out = arrayLower(p)
+    expect(findOps(out, ['fold', 'bindingRef'])).toEqual([])
   })
 
   test('inlineInstances: program with InstanceDecl returns an instance-free program', () => {

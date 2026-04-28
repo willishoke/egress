@@ -920,17 +920,40 @@ function resolveMatch(node: ParsedMatch, scope: Scope): MatchExpr {
     }
     seen.add(variant)
 
-    // Build binders matching variant.payload; the parsed `bind` is
-    // string | string[] | undefined. Empty payload arms must have no
-    // binders; non-empty arms must bind every payload field.
-    const bindNames = a.bind === undefined ? []
-      : (Array.isArray(a.bind) ? a.bind : [a.bind])
-    if (bindNames.length !== variant.payload.length) {
+    // Build binders matching variant.payload by field name. Empty
+    // payload arms must have no binders; non-empty arms must bind every
+    // payload field exactly once. Binders are emitted in variant.payload
+    // declaration order (the order the IR consumer expects).
+    if (a.binds.length !== variant.payload.length) {
       throw new ElaborationError(
-        `match arm '${variant.name}': expected ${variant.payload.length} binder(s) (one per payload field), got ${bindNames.length}`,
+        `match arm '${variant.name}': expected ${variant.payload.length} binder(s) (one per payload field), got ${a.binds.length}`,
       )
     }
-    const binders: BinderDecl[] = bindNames.map(name => ({ op: 'binderDecl', name }))
+    const bindByField = new Map<string, string>()
+    for (const b of a.binds) {
+      if (bindByField.has(b.field.name)) {
+        throw new ElaborationError(
+          `match arm '${variant.name}': duplicate pattern field '${b.field.name}'`,
+        )
+      }
+      bindByField.set(b.field.name, b.bind)
+    }
+    const binders: BinderDecl[] = variant.payload.map(field => {
+      const bindName = bindByField.get(field.name)
+      if (bindName === undefined) {
+        throw new ElaborationError(
+          `match arm '${variant.name}': missing pattern binding for payload field '${field.name}'`,
+        )
+      }
+      bindByField.delete(field.name)
+      return { op: 'binderDecl', name: bindName }
+    })
+    if (bindByField.size > 0) {
+      const extras = [...bindByField.keys()].join(', ')
+      throw new ElaborationError(
+        `match arm '${variant.name}': unknown pattern field(s): ${extras}`,
+      )
+    }
     // Push binders into scope, resolve body, pop.
     const body = withBinders(scope, binders, () => resolveExpr(a.body, scope))
     arms.push({ variant, binders, body })

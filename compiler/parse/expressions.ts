@@ -434,25 +434,28 @@ function parseMatch(ctx: Ctx): MatchNode {
       throw new ParseError(`match: duplicate arm for variant '${variant}'`, variantTok)
     }
     seen.add(variant)
-    let bindNames: string[] = []
+    const binds: Array<{ field: NameRefNode; bind: string }> = []
     if (eat(ctx, '{')) {
       // Pattern: `Variant { field: name, field: name }` — bind payload
-      // fields to local names.
+      // fields to local names. Field name and bind name are both required.
+      const seenFields = new Set<string>()
       const pairs = commaList(ctx, '}', () => {
         const fname = consume(ctx, 'ident', `arm '${variant}' field name`).value as string
+        if (seenFields.has(fname)) {
+          throw new ParseError(`arm '${variant}': duplicate field '${fname}' in pattern`, peek(ctx))
+        }
+        seenFields.add(fname)
         consume(ctx, ':', `arm '${variant}' \`:\` after field name`)
         const localName = consume(ctx, 'ident', `arm '${variant}' bind name`).value as string
-        return localName
+        return { field: nameRef(fname), bind: localName }
       })
       consume(ctx, '}', `arm '${variant}' closing \`}\` of pattern`)
-      bindNames = pairs
+      for (const p of pairs) binds.push(p)
     }
     consume(ctx, '=>', `arm '${variant}' \`=>\` after pattern`)
+    const bindNames = binds.map(b => b.bind)
     const body = withScope(ctx.binders, bindNames, () => parseTopExpr(ctx))
-    const arm: MatchArmEntry = { variant: nameRef(variant), body }
-    if (bindNames.length === 1) arm.bind = bindNames[0]
-    else if (bindNames.length > 1) arm.bind = bindNames
-    arms.push(arm)
+    arms.push({ variant: nameRef(variant), binds, body })
     if (peek(ctx).kind === '}') break
     consume(ctx, ',', 'match: `,` between arms')
   }

@@ -617,9 +617,7 @@ function lowerMatch(node: ParsedMatchNode, scope: Scope): LegacyExprNode {
 
   const arms: Record<string, { bind?: string | string[]; body: LegacyExprNode }> = {}
   for (const arm of node.arms) {
-    const bindNames: string[] = arm.bind === undefined
-      ? []
-      : (typeof arm.bind === 'string' ? [arm.bind] : arm.bind)
+    const bindNames = arm.binds.map(b => b.bind)
 
     const pushed: string[] = []
     for (const bn of bindNames) {
@@ -631,8 +629,11 @@ function lowerMatch(node: ParsedMatchNode, scope: Scope): LegacyExprNode {
     const body = lowerExpr(arm.body, scope)
     for (const bn of pushed) scope.binders.delete(bn)
 
+    // The legacy schema does not carry payload field names — only the
+    // bind name(s). Collapse: 0 → omit, 1 → string, >1 → string[].
     const armOut: { bind?: string | string[]; body: LegacyExprNode } = { body }
-    if (arm.bind !== undefined) armOut.bind = arm.bind
+    if (bindNames.length === 1) armOut.bind = bindNames[0]
+    else if (bindNames.length > 1) armOut.bind = bindNames
     arms[arm.variant.name] = armOut
   }
 

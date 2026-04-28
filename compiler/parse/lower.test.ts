@@ -283,10 +283,10 @@ describe('lower — ADTs (EnvExpDecay-shaped)', () => {
               op: 'match',
               scrutinee: nameRef('state'),
               arms: [
-                { variant: nameRef('Idle'), body: 0 },
+                { variant: nameRef('Idle'), binds: [], body: 0 },
                 {
                   variant: nameRef('Decaying'),
-                  bind: 'level',
+                  binds: [{ field: nameRef('level'), bind: 'level' }],
                   body: { op: 'binding', name: 'level' },
                 },
               ],

@@ -263,9 +263,9 @@ describe('expressions — match', () => {
       op: 'match',
       scrutinee: { op: 'nameRef', name: 'v' },
       arms: [
-        { variant: nameRef('Red'),   body: 1 },
-        { variant: nameRef('Green'), body: 2 },
-        { variant: nameRef('Blue'),  body: 3 },
+        { variant: nameRef('Red'),   binds: [], body: 1 },
+        { variant: nameRef('Green'), binds: [], body: 2 },
+        { variant: nameRef('Blue'),  binds: [], body: 3 },
       ],
     })
   })
@@ -282,15 +282,15 @@ describe('expressions — match', () => {
       arms: [
         {
           variant: nameRef('Some'),
-          bind: 'x',
+          binds: [{ field: nameRef('value'), bind: 'x' }],
           body: { op: 'add', args: [{ op: 'binding', name: 'x' }, 1] },
         },
-        { variant: nameRef('None'), body: 0 },
+        { variant: nameRef('None'), binds: [], body: 0 },
       ],
     })
   })
 
-  test('match with multi-field bindings emits bind as array', () => {
+  test('match with multi-field bindings preserves field-name pairs', () => {
     expect(parseExpr(`
       match v {
         Hz { freq: f, gain: g } => f * g
@@ -301,7 +301,10 @@ describe('expressions — match', () => {
       arms: [
         {
           variant: nameRef('Hz'),
-          bind: ['f', 'g'],
+          binds: [
+            { field: nameRef('freq'), bind: 'f' },
+            { field: nameRef('gain'), bind: 'g' },
+          ],
           body: {
             op: 'mul',
             args: [{ op: 'binding', name: 'f' }, { op: 'binding', name: 'g' }],

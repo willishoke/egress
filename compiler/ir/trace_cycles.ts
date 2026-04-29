@@ -94,6 +94,7 @@ export function traceCycles(prog: ResolvedProgram): ResolvedProgram {
       // breaker — same semantics as legacy flatten.ts.
       update: { op: 'nestedOut', instance: inst, output },
       init: 0,
+      _liftedFrom: 'synthetic',
     }
     breakerDelay.set(key, d)
     syntheticDelays.push(d)

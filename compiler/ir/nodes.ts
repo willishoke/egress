@@ -128,11 +128,23 @@ export interface TypeParamDecl {
 // Body decls — names introduced in a program body
 // ─────────────────────────────────────────────────────────────
 
+/** Provenance tag set by `inlineInstances:liftClonedBody` when a reg
+ *  or delay was lifted from a sub-instance. The outer instance's name
+ *  is the originating session-level instance (or 'synthetic' for cycle-
+ *  break delays inserted by `traceCycles`). Used by post-strata passes
+ *  that need to identify decls by their lineage without parsing the
+ *  renamed `${instance}_${innerName}` prefix string. Replaces the
+ *  §2.3 D7 name-prefix anti-pattern. */
+export type LiftedFrom = string | 'synthetic'
+
 export interface RegDecl {
   op: 'regDecl'
   name: string
   init: ResolvedExpr
   type?: ScalarKind | AliasTypeDef
+  /** Optional provenance tag — set when the decl was lifted from a
+   *  sub-instance during `inlineInstances`. */
+  _liftedFrom?: LiftedFrom
 }
 
 export interface DelayDecl {
@@ -140,6 +152,9 @@ export interface DelayDecl {
   name: string
   update: ResolvedExpr
   init: ResolvedExpr
+  /** Optional provenance tag — set when the decl was lifted from a
+   *  sub-instance during `inlineInstances`. */
+  _liftedFrom?: LiftedFrom
 }
 
 export interface ParamDecl {

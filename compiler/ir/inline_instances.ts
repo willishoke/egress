@@ -286,10 +286,17 @@ function liftClonedBody(
     switch (d.op) {
       case 'regDecl':
         d.name = `${instanceName}_${d.name}`
+        // Stamp provenance with the current outer's name. Each lift
+        // overwrites: the post-strata tag is the *outermost* (session-
+        // level) instance the decl ultimately came from. Consumers
+        // (e.g. applyGateableWraps) match against gateable session
+        // instances by name.
+        d._liftedFrom = instanceName
         liftedDecls.push(d)
         break
       case 'delayDecl':
         d.name = `${instanceName}_${d.name}`
+        d._liftedFrom = instanceName
         liftedDecls.push(d)
         break
       case 'paramDecl':

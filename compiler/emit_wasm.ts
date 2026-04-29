@@ -24,7 +24,7 @@
  *   - param_frame  → f64 cells snapshotted per block for TriggerParam
  */
 
-import type { FlatPlan } from './flatten.js'
+import type { FlatPlan } from './flat_plan'
 import type { NInstr, NOperand, ScalarType } from './emit_numeric.js'
 import { type WasmLayout, computeLayout, collectParamPtrs } from './wasm_memory_layout.js'
 

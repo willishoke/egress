@@ -48,7 +48,7 @@ import type { SessionState } from '../session.js'
 import type { ProgramInstance } from '../program_types.js'
 import { strataPipeline } from './strata.js'
 import { compileResolved } from './compile_resolved.js'
-import type { FlatPlan } from '../flatten.js'
+import type { FlatPlan } from '../flat_plan'
 import { specializeProgram } from './specialize.js'
 import { cloneResolvedProgram } from './clone.js'
 

@@ -3,7 +3,7 @@
  */
 import { makeSession, SessionState } from './session.js'
 import { loadStdlib as loadBuiltins } from './program.js'
-import { flattenSession } from './flatten.js'
+import { compileSession } from './ir/compile_session'
 
 const session: SessionState = makeSession()
 loadBuiltins(session)
@@ -43,7 +43,7 @@ for (const [typeName, instanceName] of modules) {
   solo.graphOutputs.push({ instance: instanceName, output: type._def.outputNames[0] })
   const t = performance.now()
   try {
-    flattenSession(solo)
+    compileSession(solo)
     console.log(`  ${instanceName} (${typeName}): ${(performance.now() - t).toFixed(1)}ms`)
   } catch (e: any) {
     console.log(`  ${instanceName} (${typeName}): ERROR ${e.message} (${(performance.now() - t).toFixed(1)}ms)`)
@@ -54,7 +54,7 @@ console.log(`\nModules: ${session.instanceRegistry.size}`)
 console.log('Starting full flattenSession...')
 
 const t0 = performance.now()
-const plan = flattenSession(session)
+const plan = compileSession(session)
 const t1 = performance.now()
 console.log(`flattenSession: ${(t1 - t0).toFixed(1)}ms`)
 console.log(`  instructions: ${plan.instructions.length}`)

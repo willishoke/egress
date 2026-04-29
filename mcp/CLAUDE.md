@@ -21,7 +21,7 @@ test_patch.ts  Standalone CLI smoke-tester: bun run mcp/test_patch.ts <patch.jso
 
 The server maintains a `SessionState` (from `compiler/session.ts`) containing the type registry, program instances, wiring expressions, graph outputs, control parameters, and a `Runtime` handle.
 
-Every mutation that affects the signal graph calls `wire()`, which runs the full compilation pipeline: `flattenSession()` → `JSON.stringify()` → `runtime.loadPlan()`. This recompiles and hot-swaps the kernel. Errors during compilation are caught and returned as tool error responses.
+Every mutation that affects the signal graph calls `wire()`, which runs the full compilation pipeline through `applyFlatPlan()`: `compileSession()` (resolved-IR strata pipeline) → `JSON.stringify()` → `runtime.loadPlan()`. This recompiles and hot-swaps the kernel. Errors during compilation are caught and returned as tool error responses.
 
 ## Tools
 

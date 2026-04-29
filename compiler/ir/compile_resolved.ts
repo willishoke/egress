@@ -26,7 +26,7 @@
 
 import type { ResolvedProgram, ResolvedExpr, OutputDecl, RegDecl, DelayDecl } from './nodes.js'
 import type { ExprNode } from '../expr.js'
-import type { FlatPlan } from '../flatten.js'
+import type { FlatPlan } from '../flat_plan'
 import { resolvedToSlotted } from './load.js'
 import { buildSlotMaps, type SlotMaps } from './slots.js'
 import { emitNumericProgram, type ScalarType } from '../emit_numeric.js'

@@ -1,35 +1,96 @@
 # compiler/
 
-TypeScript layer. Handles program definition, expression construction, flattening, instruction emission, and the FFI bridge to C++. No audio processing happens here — this layer produces the `tropical_plan_4` JSON that the C++ engine JIT-compiles.
+TypeScript layer. Handles program definition, expression construction, the strata pipeline, instruction emission, and the FFI bridge to C++. No audio processing happens here — this layer produces the `tropical_plan_4` JSON that the C++ engine JIT-compiles.
 
 ## Layout
 
 ```
 expr.ts               ExprNode type, SignalExpr wrapper, all named operations
-program_types.ts      ProgramDef IR, ProgramType, ProgramInstance (pure data types, no DSL)
+program_types.ts      ProgramType, ProgramInstance (slot-indexed legacy view; D3 retires this)
 program.ts            ProgramNode (tropical_program_2) types, conversions, stdlib loading
-flatten.ts            Session → tropical_plan_4 (inline all instances, resolve refs)
-lower_arrays.ts       Lower array ops + combinators to scalar primitives (static unrolling)
-emit_numeric.ts       ExprNode trees → FlatProgram instruction stream
+session.ts            SessionState, generic-program resolution, JSON ingest
+schema.ts             Zod validation schemas for tropical_program_2
+flat_plan.ts          tropical_plan_4 schema (the boundary type with the C++ engine)
+emit_numeric.ts       ExprNode trees → FlatProgram instruction stream (structural CSE)
+apply_plan.ts         compileSession → JSON.stringify → runtime.loadPlan
 compiler.ts           Dependency graph, topological sort, SCC, port type conversion
 term.ts               Port types (PortType, ScalarKind), shape algebra, type utilities
-session.ts            SessionState, loadProgramDef (ProgramNode → ProgramDef), loadJSON, prettyExpr
-schema.ts             Zod validation schemas for tropical_program_2
-apply_plan.ts         flattenSession → JSON.stringify → runtime.loadPlan
 array_wiring.ts       Typed port validation, auto-broadcast insertion
+flatten.ts            LEGACY session-flattener; not on the runtime path post-D2 cutover.
+                      Retained for the equivalence gates and a handful of consumers; D3
+                      finishes its retirement.
+interpret.ts          Pure-TS evaluator over post-flatten ExprNode trees. Independent
+                      oracle for jit_interp_equiv. D3 will retarget to ResolvedExpr.
 bench_compile.ts      Compilation benchmarks
 
+ir/                   The strata pipeline + resolved-IR emit boundary
+  nodes.ts            ResolvedProgram + decl/ref node types
+  elaborator.ts       ParsedProgram → ResolvedProgram (name resolution → decl identity)
+  specialize.ts       Type-arg substitution (generic monomorphization)
+  sum_lower.ts        Lower sum-typed regs/delays to scalar bundles
+  trace_cycles.ts     Detect cycles, insert synthetic delays
+  inline_instances.ts Recursively inline InstanceDecls into the outer body
+  array_lower.ts      Lower array ops + combinators to scalar primitives
+  strata.ts           strataPipeline: compose specialize → sumLower → traceCycles
+                      → inlineInstances → arrayLower
+  slots.ts            buildSlotMaps: per-call slot allocator (decl identity → integer)
+  load.ts             ResolvedProgram → ProgramDef bridge (legacy emit boundary; D3 retires)
+  compile_resolved.ts Per-program emit: post-strata ResolvedProgram → tropical_plan_4
+  compile_session.ts  Session emit: synthetic top-level + strata + compile_resolved.
+                      Handles wiring translation, gateable subgraph wrap, session-level
+                      delay extraction.
+  clone.ts            Identity-preserving clone with substitution (used by specialize +
+                      inline_instances input substitution)
+
+parse/                .trop surface syntax + JSON-ingest adapter
+  lexer.ts, declarations.ts, expressions.ts, statements.ts, markdown.ts, print.ts
+  raise.ts            JSON `tropical_program_2` → ParsedProgram (one sanctioned input
+                      adapter; produces only NameRef-bearing output, never resolved-IR
+                      refs — that's the elaborator's job)
+  lower_bounds.ts     Parse-time desugaring of `in [lo, hi]` annotations to clamp ops
+  nodes.ts            ParsedProgram + ParsedExprNode (strict discriminated union)
+
 runtime/
-  bindings.ts         koffi FFI declarations mirroring tropical_c.h
+  bindings.ts         koffi FFI declarations matching tropical_c.h
   runtime.ts          Runtime class (tropical_runtime_t wrapper, FinalizationRegistry)
   audio.ts            DAC class (tropical_dac_t wrapper, device listing)
   param.ts            Param (smoothed) and Trigger (fire-once), with .asExpr()
   audio_smoke.ts      Smoke test for audio output
 ```
 
+## Compilation pipeline (post-D2 cutover)
+
+```
+ProgramNode JSON (tropical_program_2)
+  → raiseProgram → ParsedProgram
+  → elaborate → ResolvedProgram (graph IR; refs are decl objects, not names)
+  → loaded into session.resolvedRegistry / genericTemplatesResolved
+
+session has instances + wiring + graph_outputs
+  → compileSession (compiler/ir/compile_session.ts)
+       1. materializeSession: synthetic top-level ResolvedProgram
+          - one InstanceDecl per session instance (type pre-specialized)
+          - wiring expressions translated session-ExprNode → ResolvedExpr
+          - dac.out graph_outputs → outputAssign per wire
+          - gateable instances: pre-strata wrap with __gate__ synthetic input;
+            gate exprs routed through strata as synthetic outputs to inline
+            their nestedOut refs alongside the rest
+       2. strataPipeline (compiler/ir/strata.ts):
+            specialize → sumLower → traceCycles → inlineInstances → arrayLower
+       3. (post-strata gateable wrap of lifted sub-instance regs/delays)
+       4. compileResolved (compiler/ir/compile_resolved.ts):
+            buildSlotMaps + resolvedToSlotted + resolveDelayValues
+            → emit_numeric → FlatProgram → tropical_plan_4
+  ─── C API boundary (tropical_c.h, koffi FFI) ───
+  → NumericProgramParser (JSON → FlatProgram struct)
+  → JIT compilation (FlatProgram → LLVM IR → native kernel)
+  → FlatRuntime (per-sample execution, double-buffered hot-swap)
+  → Audio output (RtAudio / CoreAudio)
+```
+
 ## Expression system (`expr.ts`)
 
-`ExprNode` is the universal IR — a recursive JSON-serializable union:
+`ExprNode` is the recursive JSON-serializable union:
 
 ```typescript
 type ExprNode = number | boolean | ExprNode[] | { op: string; ... }
@@ -37,94 +98,45 @@ type ExprNode = number | boolean | ExprNode[] | { op: string; ... }
 
 `SignalExpr` wraps `ExprNode` with optional static shape metadata. All operations are free functions (no operator overloading in TS):
 
-- **Arithmetic**: `add`, `sub`, `mul`, `div`, `mod`, `floorDiv`, `ldexp`
+- **Arithmetic**: `add`, `sub`, `mul`, `div`, `mod`, `floorDiv`, `ldexp`, `pow`
 - **Comparison**: `lt`, `lte`, `gt`, `gte`, `eq`, `neq`
 - **Bitwise**: `bitAnd`, `bitOr`, `bitXor`, `lshift`, `rshift`, `bitNot`
-- **Math**: `neg`, `abs`, `sqrt`, `float_exponent`, `logicalNot` (transcendentals — sin, cos, tanh, exp, log, pow — live in `stdlib/` as programs, not primitives)
-- **Ternary**: `clamp`, `select`
-- **Array**: `arrayPack`, `arraySet`, `index`, `zeros`, `ones`, `fill`, `reshape`, `transpose`, `slice`, `reduce`, `broadcastTo`, `mapArray`
-- **Matrix**: `matrix`, `matmul` (supports arbitrary semirings via `mul_op`/`add_op`)
-- **Leaf nodes**: `sampleRate`, `sampleIndex`, `inputExpr`, `registerExpr`, `refExpr`, `nestedOutputExpr`, `delayValueExpr`, `paramExpr`, `triggerParamExpr`
+- **Math**: `neg`, `abs`, `sqrt`, `floatExponent`, `not`. Transcendentals (`sin`, `cos`, `tanh`, `exp`, `log`) live in `stdlib/` as program types, not primitives.
+- **Ternary**: `clamp`, `select`, `arraySet`
+- **Array / matrix**: `arrayPack`, `index`, `zeros`, `reshape`, `transpose`, `slice`, `reduce`, `broadcastTo`, `matmul`
+- **References**: `input`, `reg`, `delayValue`, `nestedOutput`, `param`, `trigger`, `binding`
+- **Sentinels**: `sampleRate`, `sampleIndex`
 
-Compile-time combinators (`let`, `generate`, `iterate`, `fold`, `scan`, `map2`, `zip_with`, `chain`) are embedded directly in JSON as ExprNode ops and lowered by `lower_arrays.ts` — no TS wrapper functions needed.
+Compile-time combinators (`let`, `generate`, `iterate`, `fold`, `scan`, `map2`, `zipWith`, `chain`) are embedded directly in JSON as ExprNode ops; the strata `array_lower` stratum unrolls them. Phase D D4 will narrow `ExprNode` to the MCP wire-format ops only — combinators move to parse-time-only types.
 
-## Program types (`program_types.ts`)
+## Resolved IR (`ir/nodes.ts`)
 
-Pure data types — no DSL, no side effects:
+The strata pipeline operates on `ResolvedProgram` — a graph IR where every reference is a direct decl-object pointer:
 
-- **`ProgramDef`** — the compiler's slot-indexed IR consumed by the flattener. Fields: `outputExprNodes`, `registerExprNodes`, `delayUpdateNodes`, `nestedCalls`, etc. Built from ProgramNode by `loadProgramDef()` in `session.ts` via `slottifyExpr()` (pure name→slot tree walk).
-- **`ProgramType`** — wraps a `ProgramDef`, registered in `SessionState.typeRegistry`
-- **`ProgramInstance`** — named instance of a type, with port accessors
+- **Decls**: `InputDecl`, `OutputDecl`, `RegDecl`, `DelayDecl`, `ParamDecl`, `InstanceDecl`, `ProgramDecl`, `BinderDecl`, `TypeParamDecl`
+- **Refs**: `InputRef`, `RegRef`, `DelayRef`, `ParamRef`, `TypeParamRef`, `BindingRef`, `NestedOut` — each carries a `decl` field pointing at the introducing decl
+- **Ops**: `BinaryOpNode`, `UnaryOpNode`, `ClampNode`, `SelectNode`, `IndexNode`, `ZerosNode`, `ArraySetNode`, plus combinator and ADT nodes
 
-## Standard library (`stdlib/*.json`)
+The elaborator (`ir/elaborator.ts`) is the unique site for name resolution. Every other stratum operates on resolved decl identity — no string lookups, no scope walks.
 
-19 built-in types as `tropical_program_2` files, loaded by `loadStdlib()` in `program.ts`:
+## Instruction emission (`emit_numeric.ts`)
 
-- **Transcendentals** (polynomial approximations): Sin, Cos, Tanh, Exp, Log, Pow
-- **Filters / shapers**: OnePole, LadderFilter (4-pole Moog), SoftClip, BitCrusher
-- **Delays**: AllpassDelay, CombDelay, Delay (generic — `type_args: {N}`, default 44100)
-- **Effects**: Phaser, Phaser16
-- **Utility**: VCA, CrossFade, Clock, NoiseLFSR
-
-Complex programs use inline `programs` for subprogram composition (e.g., Phaser defines `_allpassStage` as a nested program) and reference stdlib types via `instances: { name: { program: 'Sin', ... } }`.
-
-## Compilation pipeline
-
-### Flattening (`flatten.ts`)
-
-The critical compilation step. Transforms a multi-instance session into a single flat instruction stream (`tropical_plan_4`).
-
-1. **Input substitution** — replace `input(N)` with wiring expressions
-2. **Reference resolution** — inline `ref(instance, output)` by recursively substituting the referenced instance's output expression
-3. **Nested call resolution** — expand `nested_output(nodeId, outputId)` by inlining nested instance expressions with offset register IDs
-4. **Delay resolution** — convert `delay_value(nodeId)` to register reads
-5. **Function inlining** — expand `call(function(body), args)` via input substitution
-6. **Wiring type normalization** — validate compatibility, insert `broadcast_to` for shape mismatches
-
-WeakMap memoization maintains DAG sharing and prevents exponential blowup.
-
-### Array lowering and combinator expansion (`lower_arrays.ts`)
-
-All shapes are static, so every operation fully unrolls:
-
-- `zeros(shape)` → `ArrayPack` of zeros
-- `reshape`, `transpose`, `slice` → reindexed `ArrayPack`
-- `reduce(axis, op)` → unrolled fold
-- `broadcast_to` → replicated elements
-- `matmul(a, b)` → unrolled dot products (semiring lowering with `mul_op`/`add_op`)
-
-Compile-time combinators expand via `substituteBindings` (replaces `{ op: 'binding', name }` nodes):
-- `let` → sequential let\* evaluation + substitution
-- `generate(n, i, body)` → inline array of body[i=0..n-1]
-- `iterate(n, init, x, body)` → [init, f(init), f(f(init)), ...]
-- `fold(arr, init, acc, elem, body)` → unrolled left fold to scalar
-- `scan` → like fold but keeps intermediates as array
-- `map2(arr, elem, body)` → substitute per element
-- `zip_with(a, b, x, y, body)` → zip + substitute
-- `chain(n, init, x, body)` → n serial applications
-
-### Instruction emission (`emit_numeric.ts`)
-
-Walks flattened ExprNode trees, emits a `FlatProgram`:
+Walks lowered ExprNode trees (post-`resolvedToSlotted`), emits a `FlatProgram`:
 
 - `NInstr`: `tag` (op name → C++ `OpTag`), `dst` (temp slot), `args` (`NOperand[]`), `loop_count`, `strides`, `result_type`
 - Operand kinds: `const`, `input`, `reg`, `array_reg`, `state_reg`, `param`, `rate`, `tick`
-- Terminals (literals, inputs, registers) are embedded as operands, not separate instructions
-- Output includes `register_count`, `array_slot_sizes`, `output_targets`, `register_targets`
+- Terminals embed inline; non-terminals get a temp register
+- **Structural CSE**: `compileNode` keys its memo on a bottom-up structural id (interned via `${op}|${field=}|${child_id}` strings), not node identity. This catches duplicates the strata pipeline's clone-then-substitute introduces.
 
-### Graph utilities (`compiler.ts`)
+## Standard library (`stdlib/*.trop`)
 
-Used by the flattener to determine execution order:
+19+ built-in types as `.trop` surface-syntax files, loaded by `loadStdlib()` in `program.ts` via the parser → elaborator pipeline:
 
-1. `buildDependencyGraph()` — extract instance refs from input expressions
-2. `tarjanSCC()` — cycle detection (feedback cycles are errors)
-3. `topologicalSort()` — Kahn's algorithm with level grouping
-4. `extractInstanceInfo()` — convert ProgramDef to slot-indexed InstanceInfo
-5. `portTypeFromString()` — parse type annotations to PortType
-
-### Plan application (`apply_plan.ts`)
-
-`applyFlatPlan(session, runtime)` ties it together: `flattenSession()` → `JSON.stringify()` → `runtime.loadPlan()`. Called after any wiring mutation.
+- **Transcendentals** (polynomial approximations): `Sin`, `Cos`, `Tanh`, `Exp`, `Log`, `Pow`
+- **Filters / shapers**: `OnePole`, `LadderFilter` (4-pole Moog), `SoftClip`, `BitCrusher`, `SVF`
+- **Delays**: `AllpassDelay`, `CombDelay`, `Delay` (generic — `<N: int = 44100>`)
+- **Effects**: `Phaser`, `Phaser16`
+- **Utility**: `VCA`, `CrossFade`, `Clock`, `NoiseLFSR`, `BlepSaw`, `EnvExpDecay`, `Sequencer`, `Seq4MinorTranspose`, `SampleHold`, `Bubble`, `BubbleCloud`
 
 ## FFI bridge (`runtime/`)
 
@@ -135,21 +147,18 @@ Used by the flattener to determine execution order:
 
 ## Tests
 
-Run with `bun test`. Test files:
+Run with `bun test`. Notable suites:
 
-- `flatten_wiring.test.ts` — flattening and wiring resolution
-- `array_wiring.test.ts` — typed port validation, broadcast insertion
-- `compiler.test.ts` — dependency graph, topological sort, SCC, port type conversion
-- `expr.test.ts` — expression construction and evaluation
-- `lower_arrays.test.ts` — array lowering to scalar primitives
+- `compile_session_equiv.test.ts` — audio-equivalence gate: every unified_ir fixture produces sample-for-sample identical audio under the new and legacy paths
+- `jit_interp_equiv.test.ts` — JIT vs. pure-TS interpreter (independent oracle)
+- `unified_ir.test.ts` — pinned `tropical_plan_4` snapshots over the fixture corpus
+- `ir/*.test.ts` — strata pipeline unit tests (specialize, sum_lower, trace_cycles, inline_instances, array_lower, slots)
+- `parse/*.test.ts` — lexer, parser, raise, round-trip
 - `apply_plan.test.ts` — plan application integration (requires native lib)
-- `combinators.test.ts` — compile-time combinator expansion
-- `program.test.ts` — ProgramNode schema conversions and Zod validation
-- `bounds.test.ts` — bounded type enforcement and clamp insertion
-- `emit_numeric.test.ts` — instruction emission
+- `wasm_runtime.test.ts`, `wasm_vs_jit_equiv.test.ts`, `web_plans_vs_jit.test.ts` — WASM emission
 
 ## Adding a program type
 
-1. Create a `stdlib/MyType.json` file using the `tropical_program_2` schema
-2. The file is automatically loaded by `loadStdlib()` on startup
-3. No C++ changes needed unless you need a new expression op
+1. Create a `stdlib/MyType.trop` file in surface syntax, OR a JSON `tropical_program_2` file.
+2. The file is automatically loaded by `loadStdlib()` on startup; raised through `parse → raise → elaborate` to a `ResolvedProgram`.
+3. No C++ changes needed unless you need a new expression op.

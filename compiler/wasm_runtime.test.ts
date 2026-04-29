@@ -9,8 +9,8 @@
  */
 
 import { describe, test, expect } from 'bun:test'
-import type { FlatPlan } from './flatten'
-import { flattenSession } from './flatten'
+import type { FlatPlan } from './flat_plan'
+import { compileSession } from './ir/compile_session'
 import { emitWasm } from './emit_wasm'
 import { WasmRuntime, type LoadedPlan } from '../web/worklet/runtime'
 import { makeSession, loadJSON } from './session'
@@ -30,7 +30,7 @@ function buildPureSine440Plan(): FlatPlan {
     ]},
     audio_outputs: [{ instance: 'osc', output: 'sine' }],
   }, session)
-  return flattenSession(session)
+  return compileSession(session)
 }
 
 async function compile(plan: FlatPlan, maxBlockSize: number): Promise<LoadedPlan> {

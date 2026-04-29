@@ -12,7 +12,8 @@
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON, type ProgramFile } from './session'
 import { loadStdlib } from './program'
-import { flattenSession, type FlatPlan } from './flatten'
+import { compileSession } from './ir/compile_session'
+import type { FlatPlan } from './flat_plan'
 import { emitWasm } from './emit_wasm'
 
 // Load state_init values into the WASM module's register region.
@@ -73,7 +74,7 @@ function makeSinOscPlan(freqHz: number): FlatPlan {
       audio_outputs: [{ instance: 'osc', output: 'sine' }],
     }
     loadJSON(prog, session)
-    return flattenSession(session)
+    return compileSession(session)
   } finally {
     session.runtime.dispose()
   }
@@ -96,7 +97,7 @@ function makeOnePolePlan(cutoff: number): FlatPlan {
       audio_outputs: [{ instance: 'lp', output: 'out' }],
     }
     loadJSON(prog, session)
-    return flattenSession(session)
+    return compileSession(session)
   } finally {
     session.runtime.dispose()
   }

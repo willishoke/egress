@@ -12,7 +12,7 @@
  * bundle, no cold-start compile, deterministic.
  */
 
-import type { FlatPlan } from '../../compiler/flatten.js'
+import type { FlatPlan } from '../../compiler/flat_plan.js'
 import { emitWasm } from '../../compiler/emit_wasm.js'
 import type { LoadedPlan } from '../worklet/runtime.js'
 

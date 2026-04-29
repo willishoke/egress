@@ -9,7 +9,7 @@
  */
 
 import { describe, test, expect } from 'bun:test'
-import type { FlatPlan } from './flatten'
+import type { FlatPlan } from './flat_plan'
 import { flattenSession } from './flatten'
 import { emitWasm } from './emit_wasm'
 import { WasmRuntime, type LoadedPlan } from '../web/worklet/runtime'

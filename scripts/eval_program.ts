@@ -9,8 +9,8 @@
 import { readFileSync } from 'node:fs'
 import { makeSession, loadJSON } from '../compiler/session.js'
 import { loadStdlib }           from '../compiler/program.js'
-import { flattenSession }         from '../compiler/flatten.js'
-import type { FlatPlan }        from '../compiler/flatten.js'
+import { flattenSession }         from '../compiler/flat_plan.js'
+import type { FlatPlan }        from '../compiler/flat_plan.js'
 import type { NOperand }        from '../compiler/emit_numeric.js'
 
 // ─── CLI ─────────────────────────────────────────────────────────────────────

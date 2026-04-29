@@ -119,27 +119,12 @@ function registerScalarTag(t: PortType | undefined): ScalarType {
 }
 
 // ─────────────────────────────────────────────────────────────
-// tropical_plan_4 schema
+// tropical_plan_4 schema — definition lives in `./flat_plan.ts`
+// (Phase D D3 hoist so consumers don't import from this file).
 // ─────────────────────────────────────────────────────────────
 
-export interface FlatPlan {
-  schema: 'tropical_plan_4'
-  config: { sampleRate: number }
-  state_init: (number | boolean)[]
-  register_names: string[]
-  register_types: ScalarType[]
-  array_slot_names: string[]
-  outputs: number[]
-  // Compiled instruction stream (from emitNumericProgram)
-  instructions:    NInstr[]
-  register_count:  number
-  array_slot_count: number
-  array_slot_sizes: number[]
-  output_targets:  number[]
-  register_targets: number[]
-  /** Gateable-subgraph metadata, if any source_tag wrappers were emitted. */
-  groups?:         GroupInfo[]
-}
+import type { FlatPlan } from './flat_plan'
+export type { FlatPlan }
 
 /** Pre-emission representation: flattened ExprNode trees before instruction emission. */
 export interface FlatExpressions {

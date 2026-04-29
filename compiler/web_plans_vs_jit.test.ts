@@ -11,7 +11,7 @@ import { readFileSync, readdirSync, existsSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import { makeSession } from './session'
-import { type FlatPlan } from './flatten'
+import { type FlatPlan } from './flat_plan'
 import { emitWasm } from './emit_wasm'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))

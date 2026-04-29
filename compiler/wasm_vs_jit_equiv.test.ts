@@ -12,7 +12,8 @@
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON, type ProgramFile } from './session'
 import { loadStdlib } from './program'
-import { flattenSession, type FlatPlan } from './flatten'
+import { flattenSession } from './flatten'
+import type { FlatPlan } from './flat_plan'
 import { emitWasm } from './emit_wasm'
 
 // Load state_init values into the WASM module's register region.

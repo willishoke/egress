@@ -39,7 +39,7 @@
 import type {
   ResolvedProgram, ResolvedExpr, ResolvedExprOpNode, ResolvedBlock,
   ResolvedProgramPorts,
-  InputDecl, OutputDecl, ParamDecl, InstanceDecl,
+  InputDecl, OutputDecl, ParamDecl, DelayDecl, InstanceDecl,
   BodyDecl, BodyAssign, OutputAssign,
   TypeParamDecl,
 } from './nodes.js'
@@ -68,6 +68,11 @@ interface MaterializeContext {
   /** ParamDecl per param/trigger name. Created lazily as wiring expressions
    *  reference them; same identity reused across all references. */
   paramDecls: Map<string, ParamDecl>
+  /** Synthetic DelayDecls for session-level `delay()` nodes extracted
+   *  from wiring expressions. The translator creates one DelayDecl per
+   *  `delay` node; subsequent translations of the same identity-shared
+   *  ExprNode reuse the same decl via exprMemo. */
+  syntheticDelayDecls: DelayDecl[]
   /** Identity memoization: shared session ExprNode objects produce shared
    *  ResolvedExpr objects so downstream CSE memo (in resolvedToSlotted +
    *  emit_numeric) treats them as identical. */
@@ -78,9 +83,10 @@ interface MaterializeContext {
 
 function materializeSession(session: SessionState): ResolvedProgram {
   const ctx: MaterializeContext = {
-    instanceDecls: new Map(),
-    paramDecls:    new Map(),
-    exprMemo:      new WeakMap(),
+    instanceDecls:       new Map(),
+    paramDecls:          new Map(),
+    syntheticDelayDecls: [],
+    exprMemo:            new WeakMap(),
     session,
   }
 
@@ -138,11 +144,14 @@ function materializeSession(session: SessionState): ResolvedProgram {
     outputAssigns.push({ op: 'outputAssign', target: sessionOutput, expr: ref })
   }
 
-  // 4. Assemble body decls in source order: instance decls first, then
-  //    any synthetic (param/delay) decls appended.
+  // 4. Assemble body decls in source order: synthetic delays first
+  //    (so their slots claim low indices, matching legacy convention
+  //    where session delays come before instance regs), then instance
+  //    decls, then params.
   const bodyDecls: BodyDecl[] = []
+  for (const decl of ctx.syntheticDelayDecls)   bodyDecls.push(decl)
   for (const decl of ctx.instanceDecls.values()) bodyDecls.push(decl)
-  for (const decl of ctx.paramDecls.values())   bodyDecls.push(decl)
+  for (const decl of ctx.paramDecls.values())    bodyDecls.push(decl)
 
   const bodyAssigns: BodyAssign[] = outputAssigns
 
@@ -339,9 +348,30 @@ function translateOpNode(
     return { op: 'index', args: [args[0], args[1]] }
   }
 
-  // TODO: delay (session-level extractSessionDelays equivalent)
-  // TODO: broadcast_to / array_literal / matrix / matmul (D2 follow-up)
+  // Array literal: `{op:'array', items:[...]}` → bare array (ResolvedExpr[]).
+  // The resolved IR represents arrays as ResolvedExpr[]; the parser-level
+  // wrapper drops away.
+  if (op === 'array') {
+    const items = (obj.items as ExprNode[]).map(item => translateExpr(item, ctx))
+    return items as ResolvedExpr
+  }
+
+  // Session-level `delay()`: extract into a synthesized DelayDecl whose
+  // `update` is the inner expression; the original delay node becomes a
+  // delayRef. Init defaults to 0 (legacy convention). The decl is
+  // appended to ctx.syntheticDelayDecls so it lands in body.decls.
+  // exprMemo reuse means a shared `delay()` ExprNode produces a single
+  // DelayDecl, matching legacy CSE.
+  if (op === 'delay') {
+    const update = translateExpr((obj.args as ExprNode[])[0], ctx)
+    const init = typeof obj.init === 'number' ? obj.init : 0
+    const decl: DelayDecl = { op: 'delayDecl', name: `__sd${ctx.syntheticDelayDecls.length}`, update, init }
+    ctx.syntheticDelayDecls.push(decl)
+    return { op: 'delayRef', decl }
+  }
+
   // TODO: gateable subgraph wiring (source_tag)
+  // TODO: broadcastTo / matmul (less common in patches; defer)
 
   throw new Error(`compileSession: unhandled wiring op '${op}' (TODO: extend translator coverage).`)
 }

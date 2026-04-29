@@ -1,13 +1,32 @@
 /**
- * raise.ts — bridge from the legacy ExprNode-shaped `ProgramNode`
- * (`compiler/program.ts`, schema `tropical_program_2`) to the strict-typed
- * parser AST `ParsedProgram` (`compiler/parse/nodes.ts`).
+ * raise.ts — bridge from the legacy `tropical_program_2` JSON shape
+ * (`compiler/program.ts:ProgramNode`) to the strict-typed parser AST
+ * `ParsedProgram` (`compiler/parse/nodes.ts`).
  *
- * This is the categorical inverse of `lower.ts`: every transformation that
- * lower performs is undone here, and `lower(raise(legacy))` recovers the
- * input. Used by the round-trip golden tests in `raise.test.ts` — never on
- * the production runtime path.
+ * **Production runtime path** (Phase D D6 doc correction): this module
+ * is the *one* sanctioned JSON-input adapter for `tropical_program_2`.
+ * Every MCP `define_program` payload, every `merge` / `load` / `export`
+ * call, and the browser-bundle stdlib loader funnels through
+ * `raiseProgram`. Earlier doc text claimed it was "never on the
+ * production runtime path" — that text dates from before C2 wired up
+ * `loadProgramAsType` (compiler/program.ts:441).
  *
+ * **Invariant — zero scope analysis** (per category-theorist review):
+ * `raise.ts` does no name resolution. Every reference position emits a
+ * `NameRefNode`; the elaborator (`compiler/ir/elaborator.ts`) is the
+ * unique site at which names resolve to decl identity. If you find
+ * yourself reaching for "just resolve the obvious case here," stop —
+ * that work belongs in elaborate, not raise. The type system enforces
+ * this today (raise output is `ParsedProgramNode`, which has no
+ * resolved-IR ref ops); `raise.test.ts` adds a runtime assertion as
+ * future-proofing.
+ *
+ * `lower(raise(legacy))` recovers `legacy` modulo the ADT field-label
+ * limitation documented in `raiseMatch` (legacy schema lacks payload
+ * field labels; raise emits `_unknown` placeholders that `lower`
+ * discards).
+ *
+
  * Mapping summary (op tag → parser shape):
  *   {op:'input',name}          → nameRef(name)
  *   {op:'reg',name}            → nameRef(name)

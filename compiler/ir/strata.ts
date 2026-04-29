@@ -1,31 +1,23 @@
 /**
- * strata.ts — Phase C runtime IR pipeline orchestrator.
+ * strata.ts — runtime IR pipeline orchestrator.
  *
  * Composes the strata passes in order:
  *
  *   specialize → sumLower → traceCycles → inlineInstances → arrayLower
  *
- * After arrayLower, the result is consumed by loadProgramDef (Phase C2)
- * to produce a slot-indexed ProgramDef, which emit_numeric.ts compiles
- * to tropical_plan_4. Phase C1 leaves loadProgramDef unwired; this
- * orchestrator is reachable only from tests until Phase C7's flag-
- * gated wiring lands.
- *
- * Each stratum stub passes its input through unchanged when the
- * relevant feature is absent, and throws `not yet implemented` when
- * the feature is present. C1 establishes the pipeline shape; later
- * sub-phases (C3–C6) fill in real implementations.
+ * After arrayLower, the result is a post-strata `ResolvedProgram`
+ * consumed by either `compileResolved` (the JIT path) or
+ * `interpret_resolved.ts` (the independent oracle).
  */
 
 import type { ResolvedProgram, TypeParamDecl } from './nodes.js'
-import type { SessionState } from '../session.js'
 import type { ProgramType } from '../program_types.js'
 import { specializeProgram } from './specialize.js'
 import { sumLower } from './sum_lower.js'
 import { traceCycles } from './trace_cycles.js'
 import { inlineInstances } from './inline_instances.js'
 import { arrayLower } from './array_lower.js'
-import { loadProgramDefFromResolved } from './load.js'
+import { resolvedToProgramType } from './program_type_builder.js'
 
 export function strataPipeline(
   prog: ResolvedProgram,
@@ -38,21 +30,14 @@ export function strataPipeline(
   return arrayLower(inlined)
 }
 
-/** Compile a `ResolvedProgram` end-to-end through the strata pipeline,
- *  yielding a `ProgramType` (wrapping a slot-indexed `ProgramDef`) that the
- *  legacy `flatten.ts` consumes unchanged. The new pipeline produces a flat
- *  `ProgramDef` (no `nestedCalls`) — `flatten.ts` skips its nested-call
- *  branch when `nestedCalls.length === 0`, so no flatten changes are
- *  required. */
+/** Run the full strata pipeline + build a thin ProgramType wrapping the
+ *  post-strata `ResolvedProgram`. The returned ProgramType carries
+ *  metadata only (port names, port types, register names, default-input
+ *  expressions); the runtime IR lives in `_resolved`. */
 export function compileResolvedToProgramDef(
   prog: ResolvedProgram,
   typeArgs: ReadonlyMap<TypeParamDecl, number>,
-  session: Pick<
-    SessionState,
-    'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry'
-    | 'specializationCache' | 'genericTemplatesResolved'
-  > & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver'>>,
 ): ProgramType {
   const lowered = strataPipeline(prog, typeArgs)
-  return loadProgramDefFromResolved(lowered, session)
+  return resolvedToProgramType(lowered)
 }

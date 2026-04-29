@@ -462,7 +462,7 @@ export function loadProgramAsType(
     return undefined
   }
 
-  const type = compileResolvedToProgramDef(resolved, new Map(), session)
+  const type = compileResolvedToProgramDef(resolved, new Map())
   session.typeRegistry.set(prog.name, type)
   session.resolvedRegistry.set(prog.name, resolved)
   return type
@@ -676,7 +676,7 @@ function loadStdlibFromResolved(
       continue
     }
     if (session.typeRegistry.has(name)) continue
-    const type = compileResolvedToProgramDef(prog, new Map(), session)
+    const type = compileResolvedToProgramDef(prog, new Map())
     session.typeRegistry.set(name, type)
     session.resolvedRegistry.set(name, prog)
   }

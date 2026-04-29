@@ -1,9 +1,10 @@
 /**
  * transcendentals.test.ts — Differential accuracy tests for stdlib transcendentals.
  *
- * Flattens each stdlib program (Sin, Cos, Tanh, Exp, Log, Pow) with a literal
- * input, interprets the resulting ExprNode tree, and compares against
- * JavaScript Math.*. Pure TS, no FFI — runs without libtropical.dylib.
+ * Routes each stdlib program (Sin, Cos, Tanh, Exp, Log, Pow) through the
+ * resolved-IR pipeline + the pure-TS interpreter, comparing against
+ * JavaScript Math.*. Loads libtropical.dylib via makeSession (used for
+ * its session shell, not its JIT — we never call process()).
  *
  * These tests pin the polynomial approximations shipped in stdlib/*.trop
  * to documented accuracy thresholds. Changing a coefficient without
@@ -11,78 +12,35 @@
  */
 
 import { describe, test, expect } from 'bun:test'
+import { makeSession, resolveProgramType } from './session'
 import { loadStdlib } from './program'
-import { flattenExpressions } from './flatten'
-import { evalExpr, type InterpretEnv } from './interpret'
-import type { ProgramType, ProgramInstance } from './program_types'
-import type { ExprNode } from './expr'
-import type { SessionState } from './session'
-import { Param, Trigger } from './runtime/param'
-
-// ─────────────────────────────────────────────────────────────
-// Setup — load stdlib once, reuse types across all evaluations
-// ─────────────────────────────────────────────────────────────
-
-const typeRegistry = new Map<string, ProgramType>()
-const typeAliasRegistry = new Map<string, { base: string }>()
-loadStdlib({
-  typeRegistry,
-  typeAliasRegistry,
-  instanceRegistry: new Map<string, ProgramInstance>(),
-  paramRegistry: new Map<string, Param>(),
-  triggerRegistry: new Map<string, Trigger>(),
-  specializationCache: new Map<string, ProgramType>(),
-  genericTemplatesResolved: new Map(),
-  resolvedRegistry: new Map(),
-})
+import { interpretSession } from './interpret_resolved'
 
 /**
  * Evaluate `programName(inputs…) → outputName` at given numeric input values.
- * Uses flattenExpressions + evalExpr — no JIT, no FFI.
  *
- * graphOutputs is intentionally empty: the audio safety clamp only applies
- * to outputs routed to graphOutputs, and we want raw polynomial values
- * (especially for Exp/Log which produce out-of-[-1,1] results).
+ * Routes through `interpretSession`, which mixes audio outputs into a single
+ * scalar with a /20 gain compensation — so we wire the program's target
+ * output as the sole `dac.out` and undo the /20 scale post-hoc.
  */
 function evalProgram(
   programName: string,
   inputs: Record<string, number>,
   outputName = 'out',
 ): number {
-  const type = typeRegistry.get(programName)
-  if (!type) throw new Error(`Unknown program: ${programName}`)
-  const inst = type.instantiateAs('it')
-
-  const inputExprNodes = new Map<string, ExprNode>()
-  for (const [k, v] of Object.entries(inputs)) inputExprNodes.set(`it:${k}`, v)
-
-  const fullSession = {
-    typeRegistry,
-    typeAliasRegistry,
-    instanceRegistry: new Map([['it', inst]]),
-    paramRegistry: new Map(),
-    triggerRegistry: new Map(),
-    bufferLength: 1,
-    dac: null,
-    graphOutputs: [],
-    inputExprNodes,
-    runtime: null as any,
-    graph: null as any,
-    _nameCounters: new Map<string, number>(),
-  } as unknown as SessionState
-
-  const flat = flattenExpressions(fullSession)
-  const outIdx = type._def.outputNames.indexOf(outputName)
-  if (outIdx < 0) throw new Error(`Unknown output '${outputName}' on ${programName}`)
-
-  const env: InterpretEnv = {
-    sampleRate: 44100,
-    sampleIndex: 0,
-    registers: flat.stateInit,
-    inputs: [],
-    params: new Map(),
+  const session = makeSession(1)
+  try {
+    loadStdlib(session)
+    const { type } = resolveProgramType(session, programName, undefined, undefined)
+    const inst = type.instantiateAs('it', { baseTypeName: programName })
+    session.instanceRegistry.set('it', inst)
+    for (const [k, v] of Object.entries(inputs)) session.inputExprNodes.set(`it:${k}`, v)
+    session.graphOutputs.push({ instance: 'it', output: outputName })
+    const buf = interpretSession(session, 1)
+    return buf[0] * 20.0   // undo interpretSession's /20 audio mix scaling
+  } finally {
+    session.graph.dispose()
   }
-  return evalExpr(flat.outputExprs[outIdx], env) as number
 }
 
 /** Max absolute error of `ours(x)` vs `ref(x)` across a linear sweep. */

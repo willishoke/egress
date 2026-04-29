@@ -139,8 +139,22 @@ export const ProgramNodeSchema: z.ZodType = z.lazy(() => z.object({
 }))
 
 /** Schema for an on-disk tropical_program_2 file — program fields plus the
- *  session metadata (params, audio_outputs, config) that only applies at the
- *  top level. Does not carry an `op` field (the schema tag implies `program`). */
+ *  top-level session metadata fields surviving from pre-A4 patches.
+ *
+ *  ── DEPRECATED FIELDS (slated for removal after Phase E) ────────────────
+ *  • `params`         — superseded by body `paramDecl` entries (post-A3).
+ *  • `audio_outputs`  — superseded by body `outputAssign` with name="dac.out"
+ *                       (post-A4). Triggers a one-time deprecation warning
+ *                       at load time (see `compiler/program.ts`).
+ *
+ *  Both fields remain on the schema only for the deprecated read path used by
+ *  pre-A3/A4 patches in `patches/*.json`. Phase D's `compiler/schema_audit.
+ *  test.ts` ratchets the in-tree corpus toward zero usage. New programs and
+ *  stdlib must NOT use these fields.
+ *
+ *  (Source-level `config` was removed in A5: sample rate and buffer length
+ *  are runtime/host concerns, not source concerns.)
+ */
 export const ProgramFileSchemaV2: z.ZodType = z.lazy(() => z.object({
   schema: z.literal('tropical_program_2'),
   name: z.string().min(1),
@@ -149,12 +163,14 @@ export const ProgramFileSchemaV2: z.ZodType = z.lazy(() => z.object({
   breaks_cycles: z.boolean().optional(),
   ports: ProgramPortsSchema.optional(),
   body: BlockNodeSchema,
+  // DEPRECATED — see header comment.
   params: z.array(z.object({
     name: z.string(),
     value: z.number().optional(),
     time_const: z.number().optional(),
     type: z.enum(['param', 'trigger']).optional(),
   })).optional(),
+  // DEPRECATED — see header comment.
   audio_outputs: z.array(z.union([
     z.object({ instance: z.string(), output: z.union([z.string(), z.number()]) }),
     z.object({ expr: ExprNodeSchema }),

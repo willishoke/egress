@@ -5,42 +5,42 @@
     "op": "block",
     "decls": [
       {
-        "op": "generate_decls",
+        "op": "generateDecls",
         "count": 10,
         "var": "i",
         "decls": [
           {
-            "op": "instance_decl",
-            "name": { "op": "str_concat", "parts": ["VCO", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
+            "op": "instanceDecl",
+            "name": { "op": "strConcat", "parts": ["VCO", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
             "program": "SinOsc",
             "inputs": {
               "freq": { "op": "mul", "args": [{ "op": "add", "args": [{ "op": "mul", "args": [{ "op": "binding", "name": "i" }, 2] }, 1] }, 40] }
             }
           },
           {
-            "op": "instance_decl",
-            "name": { "op": "str_concat", "parts": ["Clock", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
+            "op": "instanceDecl",
+            "name": { "op": "strConcat", "parts": ["Clock", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
             "program": "Clock",
             "inputs": {
               "freq": { "op": "add", "args": [{ "op": "mul", "args": [{ "op": "binding", "name": "i" }, 0.2] }, 0.1] }
             }
           },
           {
-            "op": "instance_decl",
-            "name": { "op": "str_concat", "parts": ["Env", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
+            "op": "instanceDecl",
+            "name": { "op": "strConcat", "parts": ["Env", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
             "program": "EnvExpDecay",
             "inputs": {
               "trigger": {
                 "op": "ref",
-                "instance": { "op": "str_concat", "parts": ["Clock", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
+                "instance": { "op": "strConcat", "parts": ["Clock", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
                 "output": "output"
               },
               "decay": 0.9999
             }
           },
           {
-            "op": "instance_decl",
-            "name": { "op": "str_concat", "parts": ["VCA", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
+            "op": "instanceDecl",
+            "name": { "op": "strConcat", "parts": ["VCA", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
             "program": "VCA",
             "inputs": {
               "audio": {
@@ -48,7 +48,7 @@
                 "args": [
                   {
                     "op": "ref",
-                    "instance": { "op": "str_concat", "parts": ["VCO", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
+                    "instance": { "op": "strConcat", "parts": ["VCO", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
                     "output": "sine"
                   },
                   0.1
@@ -56,7 +56,7 @@
               },
               "cv": {
                 "op": "ref",
-                "instance": { "op": "str_concat", "parts": ["Env", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
+                "instance": { "op": "strConcat", "parts": ["Env", { "op": "add", "args": [{ "op": "binding", "name": "i" }, 1] }] },
                 "output": "env"
               }
             }

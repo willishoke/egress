@@ -17,7 +17,6 @@ import { exprDependencies, reachableInstances, buildDependencyGraph, topological
 import type { RawTypeArgs } from './specialize.js'
 import { Float, portTypeEqual, type PortType } from './term.js'
 import { raiseProgram } from './parse/raise.js'
-import { normalizeOpTags } from './parse/normalize_ops.js'
 import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
 import { compileResolvedToProgramDef } from './ir/strata.js'
 import type { ResolvedProgram } from './ir/nodes.js'
@@ -412,10 +411,6 @@ export function loadProgramAsType(
   prog: ProgramNode,
   session: Pick<SessionState, 'typeRegistry' | 'instanceRegistry' | 'paramRegistry' | 'triggerRegistry' | 'specializationCache' | 'genericTemplatesResolved' | 'resolvedRegistry'> & Partial<Pick<SessionState, 'typeAliasRegistry' | 'typeResolver' | 'sumTypeRegistry' | 'structTypeRegistry'>>,
 ): ProgramType | undefined {
-  // MCP `define_program` and similar direct callers may hand us pre-Phase-A
-  // snake_case op tags; idempotent normalization at this entry covers them.
-  // Patches loaded via loadJSON were already normalized by normalizeProgramFile.
-  normalizeOpTags(prog)
   // Register type defs (aliases, sums, structs) from type_defs before processing subprograms
   for (const td of prog.ports?.type_defs ?? []) {
     if (td.kind === 'alias' && session.typeAliasRegistry) {
@@ -481,9 +476,6 @@ export function mergeProgramIntoSession(
   topLevel: ProgramTopLevel,
   session: SessionState,
 ): void {
-  // Idempotent normalization for direct callers (covered already if `prog`
-  // came through normalizeProgramFile).
-  normalizeOpTags(prog)
   // Fail fast on name collisions
   for (const inst of instanceDecls(prog)) {
     if (session.instanceRegistry.has(inst.name))

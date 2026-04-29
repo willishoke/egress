@@ -5,7 +5,7 @@
     "op": "block",
     "decls": [
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO1",
         "program": "VCO",
         "inputs": {
@@ -35,7 +35,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO2",
         "program": "VCO",
         "inputs": {
@@ -65,7 +65,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO3",
         "program": "VCO",
         "inputs": {
@@ -95,7 +95,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO4",
         "program": "VCO",
         "inputs": {
@@ -125,7 +125,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO5",
         "program": "VCO",
         "inputs": {
@@ -155,7 +155,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO6",
         "program": "VCO",
         "inputs": {
@@ -185,7 +185,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO7",
         "program": "VCO",
         "inputs": {
@@ -215,7 +215,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO8",
         "program": "VCO",
         "inputs": {
@@ -245,7 +245,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO9",
         "program": "VCO",
         "inputs": {
@@ -275,7 +275,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO10",
         "program": "VCO",
         "inputs": {
@@ -305,7 +305,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope1",
         "program": "ADEnvelope",
         "inputs": {
@@ -319,7 +319,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope2",
         "program": "ADEnvelope",
         "inputs": {
@@ -333,7 +333,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope3",
         "program": "ADEnvelope",
         "inputs": {
@@ -347,7 +347,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope4",
         "program": "ADEnvelope",
         "inputs": {
@@ -361,7 +361,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope5",
         "program": "ADEnvelope",
         "inputs": {
@@ -375,7 +375,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope6",
         "program": "ADEnvelope",
         "inputs": {
@@ -389,7 +389,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope7",
         "program": "ADEnvelope",
         "inputs": {
@@ -403,7 +403,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope8",
         "program": "ADEnvelope",
         "inputs": {
@@ -417,7 +417,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope9",
         "program": "ADEnvelope",
         "inputs": {
@@ -431,7 +431,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ADEnvelope10",
         "program": "ADEnvelope",
         "inputs": {
@@ -445,7 +445,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock1",
         "program": "Clock",
         "inputs": {
@@ -453,7 +453,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock2",
         "program": "Clock",
         "inputs": {
@@ -461,7 +461,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock3",
         "program": "Clock",
         "inputs": {
@@ -469,7 +469,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock4",
         "program": "Clock",
         "inputs": {
@@ -477,7 +477,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock5",
         "program": "Clock",
         "inputs": {
@@ -485,7 +485,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock6",
         "program": "Clock",
         "inputs": {
@@ -493,7 +493,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock7",
         "program": "Clock",
         "inputs": {
@@ -501,7 +501,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock8",
         "program": "Clock",
         "inputs": {
@@ -509,7 +509,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock9",
         "program": "Clock",
         "inputs": {
@@ -517,7 +517,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock10",
         "program": "Clock",
         "inputs": {
@@ -525,7 +525,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp1",
         "program": "Compressor",
         "inputs": {
@@ -550,7 +550,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp2",
         "program": "Compressor",
         "inputs": {
@@ -575,7 +575,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp3",
         "program": "Compressor",
         "inputs": {
@@ -600,7 +600,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp4",
         "program": "Compressor",
         "inputs": {
@@ -625,7 +625,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp5",
         "program": "Compressor",
         "inputs": {
@@ -650,7 +650,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp6",
         "program": "Compressor",
         "inputs": {
@@ -675,7 +675,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp7",
         "program": "Compressor",
         "inputs": {
@@ -700,7 +700,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp8",
         "program": "Compressor",
         "inputs": {
@@ -725,7 +725,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp9",
         "program": "Compressor",
         "inputs": {
@@ -750,7 +750,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Comp10",
         "program": "Compressor",
         "inputs": {
@@ -775,7 +775,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "SeqClock",
         "program": "Clock",
         "inputs": {

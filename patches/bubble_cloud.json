@@ -5,19 +5,19 @@
     "op": "block",
     "decls": [
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "events",
         "program": "PoissonEvent",
         "inputs": { "rate": 20 }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "noise",
         "program": "WhiteNoise",
         "inputs": {}
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "radius_exp",
         "program": "Exp",
         "inputs": {
@@ -31,7 +31,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "cloud",
         "program": "BubbleCloud",
         "inputs": {

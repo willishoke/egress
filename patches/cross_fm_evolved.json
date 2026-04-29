@@ -5,7 +5,7 @@
     "op": "block",
     "decls": [
       {
-        "op": "program_decl",
+        "op": "programDecl",
         "name": "VoiceChannel",
         "program": {
           "op": "program",
@@ -14,7 +14,7 @@
             "op": "block",
             "decls": [
               {
-                "op": "instance_decl",
+                "op": "instanceDecl",
                 "name": "phaser",
                 "program": "Phaser",
                 "inputs": {
@@ -33,7 +33,7 @@
                 }
               },
               {
-                "op": "instance_decl",
+                "op": "instanceDecl",
                 "name": "env",
                 "program": "ADEnvelope",
                 "inputs": {
@@ -52,17 +52,17 @@
                 }
               },
               {
-                "op": "instance_decl",
+                "op": "instanceDecl",
                 "name": "vca",
                 "program": "VCA",
                 "inputs": {
                   "audio": {
-                    "op": "nested_out",
+                    "op": "nestedOut",
                     "ref": "phaser",
                     "output": 0
                   },
                   "cv": {
-                    "op": "nested_out",
+                    "op": "nestedOut",
                     "ref": "env",
                     "output": 0
                   }
@@ -71,10 +71,10 @@
             ],
             "assigns": [
               {
-                "op": "output_assign",
+                "op": "outputAssign",
                 "name": "out",
                 "expr": {
-                  "op": "nested_out",
+                  "op": "nestedOut",
                   "ref": "vca",
                   "output": 0
                 }
@@ -107,7 +107,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "lfo",
         "program": "VCO",
         "inputs": {
@@ -115,7 +115,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "seq",
         "program": "NoiseLFSR",
         "inputs": {
@@ -133,7 +133,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco1",
         "program": "VCO",
         "inputs": {
@@ -212,7 +212,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco2",
         "program": "VCO",
         "inputs": {
@@ -291,7 +291,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco3",
         "program": "VCO",
         "inputs": {
@@ -370,7 +370,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco4",
         "program": "VCO",
         "inputs": {
@@ -449,7 +449,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d1",
         "program": "Delay",
         "inputs": {
@@ -464,7 +464,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d2",
         "program": "Delay",
         "inputs": {
@@ -479,7 +479,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d3",
         "program": "Delay",
         "inputs": {
@@ -494,7 +494,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d4",
         "program": "Delay",
         "inputs": {
@@ -509,7 +509,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "v1",
         "program": "VoiceChannel",
         "inputs": {
@@ -533,7 +533,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "v2",
         "program": "VoiceChannel",
         "inputs": {
@@ -557,7 +557,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "v3",
         "program": "VoiceChannel",
         "inputs": {
@@ -581,7 +581,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "v4",
         "program": "VoiceChannel",
         "inputs": {
@@ -605,7 +605,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "bass_vco",
         "program": "VCO",
         "inputs": {
@@ -630,7 +630,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "bass",
         "program": "VoiceChannel",
         "inputs": {

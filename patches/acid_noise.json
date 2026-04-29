@@ -5,7 +5,7 @@
     "op": "block",
     "decls": [
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ClockStep",
         "program": "Clock",
         "inputs": {
@@ -13,7 +13,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ClockBeat",
         "program": "Clock",
         "inputs": {
@@ -21,7 +21,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ClockHat",
         "program": "Clock",
         "inputs": {
@@ -29,7 +29,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "ClockFast",
         "program": "Clock",
         "inputs": {
@@ -37,7 +37,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCOBass",
         "program": "VCO",
         "inputs": {
@@ -95,7 +95,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCOBit0",
         "program": "VCO",
         "inputs": {
@@ -103,7 +103,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCOBit1",
         "program": "VCO",
         "inputs": {
@@ -111,7 +111,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "EnvBassAmp",
         "program": "ADSREnvelope",
         "inputs": {
@@ -127,7 +127,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "EnvBassFilt",
         "program": "ADSREnvelope",
         "inputs": {
@@ -143,7 +143,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "FiltBass",
         "program": "LadderFilter",
         "inputs": {
@@ -174,7 +174,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Kick",
         "program": "BassDrum",
         "inputs": {
@@ -190,7 +190,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "HatNoise",
         "program": "NoiseLFSR",
         "inputs": {
@@ -202,7 +202,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "EnvHat",
         "program": "ADEnvelope",
         "inputs": {
@@ -216,7 +216,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCABass",
         "program": "VCA",
         "inputs": {
@@ -239,7 +239,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCAHat",
         "program": "VCA",
         "inputs": {

@@ -411,7 +411,6 @@ export interface ProgramPortSpec {
   name: string
   type?: PortTypeDecl
   default?: ExprNode
-  bounds?: [number | null, number | null]
 }
 
 /** A port entry: bare-name short form, or full spec. */
@@ -447,7 +446,6 @@ export interface AliasTypeDef {
   kind: 'alias'
   name: string
   base: NameRefNode
-  bounds: [number | null, number | null]
 }
 
 export type TypeDef = StructTypeDef | SumTypeDef | AliasTypeDef

@@ -164,7 +164,6 @@ function raisePort(p: string | LegacyProgramPortSpec): ParsedProgramPort {
   const spec: ParsedProgramPortSpec = { name: p.name }
   if (p.type !== undefined) spec.type = raisePortType(p.type)
   if (p.default !== undefined) spec.default = raiseExpr(p.default)
-  if (p.bounds !== undefined) spec.bounds = p.bounds
   return spec
 }
 
@@ -189,7 +188,6 @@ function raiseTypeDef(td: LegacyTypeDefJSON): ParsedTypeDef {
       kind: 'alias',
       name: td.name,
       base: nameRef(td.base),
-      bounds: td.bounds,
     }
   }
   if (td.kind === 'sum') {

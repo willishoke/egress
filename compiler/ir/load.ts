@@ -45,7 +45,7 @@ import type { SessionState } from '../session.js'
 import { coerce } from '../expr.js'
 import {
   ProgramType,
-  type ProgramDef, type NestedCall, type ValueCoercible, type Bounds,
+  type ProgramDef, type NestedCall, type ValueCoercible,
 } from '../program_types.js'
 import {
   type PortType as LegacyPortType,
@@ -108,11 +108,6 @@ export function loadProgramDefFromResolved(
   const inputPortTypes  = prog.ports.inputs.map(d => convertPortType(d.type))
   const outputPortTypes = prog.ports.outputs.map(d => convertPortType(d.type))
   const registerPortTypes = regDecls.map(d => regPortType(d))
-
-  // Legacy emits null-but-typed-undefined entries as `[null]` after JSON
-  // round-trip; in-memory they are `undefined`. Match by leaving undefined.
-  const inputBounds:  (Bounds | null)[] = prog.ports.inputs .map(d => d.bounds ?? null)
-  const outputBounds: (Bounds | null)[] = prog.ports.outputs.map(d => d.bounds ?? null)
 
   // ── Register init values ──
   // Legacy emits the bare value for non-zeros initialisers; for `zeros{N}`
@@ -237,8 +232,6 @@ export function loadProgramDefFromResolved(
     delayUpdateNodes,
     nestedCalls,
     breaksCycles: false,
-    inputBounds,
-    outputBounds,
   }
 
   return new ProgramType(def)

@@ -2,14 +2,13 @@
  * Session state, expression pretty-printer, JSON loading, and generic-program
  * resolution. The strata pipeline (compiler/ir/) handles ProgramNode →
  * ResolvedProgram → ProgramDef; this module owns the session-state shell
- * and the small library of port-type / bounds utilities used by both
- * strata and pretty-printing.
+ * and the small library of port-type utilities used by both strata and
+ * pretty-printing.
  */
 
 import { type ExprNode } from './expr.js'
 import {
   ProgramType, ProgramInstance,
-  type Bounds,
 } from './program_types.js'
 import { Runtime } from './runtime/runtime.js'
 import { loadProgramAsSession, type PortTypeDecl, type ProgramNode, type ProgramTopLevel } from './program.js'
@@ -60,7 +59,6 @@ export interface AliasTypeDefJSON {
   kind: 'alias'
   name: string
   base: string
-  bounds: [number | null, number | null]
 }
 
 export type TypeDefJSON = StructTypeDefJSON | SumTypeDefJSON | AliasTypeDefJSON
@@ -74,7 +72,7 @@ export interface SessionState {
   bufferLength: number
   dac: import('./runtime/audio.js').DAC | null  // lazy type import to avoid circular dep
   typeRegistry: Map<string, ProgramType>
-  typeAliasRegistry: Map<string, { base: string; bounds: Bounds }>
+  typeAliasRegistry: Map<string, { base: string }>
   /** Registered sum types from `ports.type_defs` entries with kind === 'sum'.
    *  Keyed by name; values carry the variant + payload metadata used for bundle decomposition. */
   sumTypeRegistry: Map<string, SumTypeMeta>
@@ -162,26 +160,28 @@ const UNARY_OPS = new Set([
 ])
 
 // ─────────────────────────────────────────────────────────────
-// Bounded type aliases
+// Builtin port-type aliases
 // ─────────────────────────────────────────────────────────────
 
-/** Built-in type aliases that map semantic names to a base type + bounds. */
-export const BOUNDED_TYPE_ALIASES: Record<string, { base: string; bounds: Bounds }> = {
-  signal:   { base: 'float', bounds: [-1, 1] },
-  bipolar:  { base: 'float', bounds: [-1, 1] },
-  unipolar: { base: 'float', bounds: [0, 1] },
-  phase:    { base: 'float', bounds: [0, 1] },
-  freq:     { base: 'float', bounds: [0, null] },
+/** Built-in type aliases that map semantic names to a base scalar type. The
+ *  alias is purely a user-facing name for the underlying scalar — there is
+ *  no separate metadata. (Bounds were removed in Phase D P0.4.) */
+export const BUILTIN_TYPE_ALIASES: Record<string, { base: string }> = {
+  signal:   { base: 'float' },
+  bipolar:  { base: 'float' },
+  unipolar: { base: 'float' },
+  phase:    { base: 'float' },
+  freq:     { base: 'float' },
 }
 
-type AliasMap = Map<string, { base: string; bounds: Bounds }>
+type AliasMap = Map<string, { base: string }>
 
 /** Resolve a type string to its base type (stripping alias). Checks user aliases first. */
 export function resolveBaseType(typeStr: string | undefined, userAliases?: AliasMap): string | undefined {
   if (!typeStr) return typeStr
   const user = userAliases?.get(typeStr)
   if (user) return user.base
-  if (typeStr in BOUNDED_TYPE_ALIASES) return BOUNDED_TYPE_ALIASES[typeStr].base
+  if (typeStr in BUILTIN_TYPE_ALIASES) return BUILTIN_TYPE_ALIASES[typeStr].base
   return typeStr
 }
 
@@ -236,21 +236,6 @@ export function decodePortTypeDecl(
     )
   })
   return ArrayType(elem, shape)
-}
-
-/** Extract bounds from a port spec. Explicit bounds override alias bounds. Checks user aliases first.
- *  Only string type names can carry alias-derived bounds; structured array types do not. */
-export function resolveBounds(
-  spec: string | { name: string; type?: PortTypeDecl; bounds?: [number | null, number | null] },
-  userAliases?: AliasMap,
-): Bounds | null {
-  if (typeof spec === 'string') return null
-  if (spec.bounds) return spec.bounds
-  if (!spec.type || typeof spec.type !== 'string') return null
-  const user = userAliases?.get(spec.type)
-  if (user) return user.bounds
-  if (spec.type in BOUNDED_TYPE_ALIASES) return BOUNDED_TYPE_ALIASES[spec.type].bounds
-  return null
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -97,30 +97,6 @@ describe('printer — ports', () => {
     `)
   })
 
-  test('bounds on inputs', () => {
-    idempotent(`
-      program X(g: float in [0, 1]) -> (out: signal) { out = 0 }
-    `)
-  })
-
-  test('null-bound', () => {
-    idempotent(`
-      program X(g: float in [null, 1]) -> (out: signal) { out = 0 }
-    `)
-  })
-
-  test('negative-literal bound', () => {
-    idempotent(`
-      program X(s: float in [-1, 1]) -> (out: signal) { out = 0 }
-    `)
-  })
-
-  test('default + bounds', () => {
-    idempotent(`
-      program X(g: float = 0.5 in [0, 1]) -> (out: signal) { out = 0 }
-    `)
-  })
-
   test('array port type with type-param', () => {
     idempotent(`
       program X<N: int = 4>(buf: float[N]) -> (out: signal) { out = 0 }
@@ -357,10 +333,10 @@ describe('printer — type defs', () => {
     `)
   })
 
-  test('alias with bounds', () => {
+  test('alias declaration', () => {
     idempotent(`
       program X() -> (out: signal) {
-        type Bipolar = float in [-1, 1]
+        type Bipolar = float
         out = 0
       }
     `)
@@ -371,7 +347,7 @@ describe('printer — type defs', () => {
       program X() -> (out: signal) {
         struct Pair { a: float, b: float }
         enum Mode { On, Off }
-        type Freq = float in [0, 20000]
+        type Freq = float
         out = 0
       }
     `)

@@ -528,14 +528,13 @@ describe('elaborator — type defs', () => {
   test('alias type-def: base resolves to ScalarKind', () => {
     const p = elabSrc(`
       program X() -> (out: signal) {
-        type Bipolar = float in [-1, 1]
+        type Bipolar = float
         out = 0
       }
     `)
     const alias = p.ports.typeDefs[0] as AliasTypeDef
     expect(alias.op).toBe('aliasTypeDef')
     expect(alias.base).toBe('float')
-    expect(alias.bounds).toEqual([-1, 1])
   })
 
   test('struct type-def: fields preserve scalar kinds', () => {

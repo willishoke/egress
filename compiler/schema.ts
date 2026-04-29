@@ -22,10 +22,8 @@ export const ExprNodeSchema: z.ZodType = z.lazy(() =>
 )
 
 // ─────────────────────────────────────────────────────────────
-// Bounds + PortType declaration (used by regs and ports)
+// PortType declaration (used by regs and ports)
 // ─────────────────────────────────────────────────────────────
-
-const BoundsSchema = z.tuple([z.number().nullable(), z.number().nullable()])
 
 const ShapeDimSchema = z.union([
   z.number().int().nonnegative(),
@@ -83,7 +81,6 @@ const AliasTypeDefSchema = z.object({
   kind: z.literal('alias'),
   name: z.string(),
   base: z.string(),
-  bounds: BoundsSchema,
 })
 
 const TypeDefSchema = z.union([StructTypeDefSchema, SumTypeDefSchema, AliasTypeDefSchema])
@@ -100,12 +97,12 @@ const TypeDefSchema = z.union([StructTypeDefSchema, SumTypeDefSchema, AliasTypeD
 
 const ProgramInputSchema = z.union([
   z.string(),
-  z.object({ name: z.string(), type: PortTypeDeclSchema.optional(), default: ExprNodeSchema.optional(), bounds: BoundsSchema.optional() }),
+  z.object({ name: z.string(), type: PortTypeDeclSchema.optional(), default: ExprNodeSchema.optional() }),
 ])
 
 const ProgramOutputSchema = z.union([
   z.string(),
-  z.object({ name: z.string(), type: PortTypeDeclSchema.optional(), bounds: BoundsSchema.optional() }),
+  z.object({ name: z.string(), type: PortTypeDeclSchema.optional() }),
 ])
 
 const ProgramPortsSchema = z.object({

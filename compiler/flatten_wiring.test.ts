@@ -8,7 +8,7 @@ import type { InstanceInfo } from './compiler'
 import { Float, ArrayType } from './term'
 import type { ExprNode } from './expr'
 import { loadProgramAsType } from './program'
-import type { ProgramType, ProgramInstance, Bounds } from './program_types'
+import type { ProgramType, ProgramInstance } from './program_types'
 import type { ProgramNode } from './program'
 import type { ResolvedProgram } from './ir/nodes'
 import { Param, Trigger } from './runtime/param'
@@ -161,7 +161,7 @@ describe('feedback cycle auto-delay', () => {
   function mockSession() {
     return {
       typeRegistry: new Map<string, ProgramType>(),
-      typeAliasRegistry: new Map<string, { base: string; bounds: Bounds }>(),
+      typeAliasRegistry: new Map<string, { base: string }>(),
       instanceRegistry: new Map<string, ProgramInstance>(),
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),
@@ -250,7 +250,7 @@ describe('gateable instances wrap outputs in source_tag', () => {
   function mockSession() {
     return {
       typeRegistry: new Map<string, ProgramType>(),
-      typeAliasRegistry: new Map<string, { base: string; bounds: Bounds }>(),
+      typeAliasRegistry: new Map<string, { base: string }>(),
       instanceRegistry: new Map<string, ProgramInstance>(),
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),
@@ -304,12 +304,11 @@ describe('gateable instances wrap outputs in source_tag', () => {
 
     const flat = flattenExpressions(fullSession)
 
-    // Output expression is wrapped in source_tag. An outer safety clamp
-    // (added for graph outputs) sits around it — unwrap once.
+    // Output expression is wrapped in source_tag. The outer implicit
+    // safety clamp was removed in Phase D P0.4; sourceTag is now the
+    // outermost wrapper.
     expect(flat.outputExprs.length).toBe(1)
-    const outer = flat.outputExprs[0] as { op: string; args: unknown[] }
-    expect(outer.op).toBe('clamp')  // safety clamp
-    const tag = outer.args[0] as { op: string; source_instance: string; gate_expr: unknown }
+    const tag = flat.outputExprs[0] as { op: string; source_instance: string; gate_expr: unknown }
     expect(tag.op).toBe('sourceTag')
     expect(tag.source_instance).toBe('voice_0')
     expect(tag.gate_expr).toBe(true)
@@ -385,7 +384,7 @@ describe('gate_input self-reference (#98)', () => {
   function mockSession() {
     return {
       typeRegistry: new Map<string, ProgramType>(),
-      typeAliasRegistry: new Map<string, { base: string; bounds: Bounds }>(),
+      typeAliasRegistry: new Map<string, { base: string }>(),
       instanceRegistry: new Map<string, ProgramInstance>(),
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),
@@ -460,7 +459,7 @@ describe('cycle-breaker with nested calls (#99)', () => {
   function mockSession() {
     return {
       typeRegistry: new Map<string, ProgramType>(),
-      typeAliasRegistry: new Map<string, { base: string; bounds: Bounds }>(),
+      typeAliasRegistry: new Map<string, { base: string }>(),
       instanceRegistry: new Map<string, ProgramInstance>(),
       paramRegistry: new Map<string, Param>(),
       triggerRegistry: new Map<string, Trigger>(),

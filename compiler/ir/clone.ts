@@ -222,7 +222,6 @@ function cloneInputDecl(d: InputDecl, t: CloneTable): InputDecl {
   t.inputs.set(d, fresh)
   if (d.type !== undefined)   fresh.type = clonePortType(d.type, t)
   if (d.default !== undefined) fresh.default = cloneExpr(d.default, t)
-  if (d.bounds !== undefined) fresh.bounds = [d.bounds[0], d.bounds[1]]
   return fresh
 }
 
@@ -232,7 +231,6 @@ function cloneOutputDecl(d: OutputDecl, t: CloneTable): OutputDecl {
   const fresh: OutputDecl = { op: 'outputDecl', name: d.name }
   t.outputs.set(d, fresh)
   if (d.type !== undefined)   fresh.type = clonePortType(d.type, t)
-  if (d.bounds !== undefined) fresh.bounds = [d.bounds[0], d.bounds[1]]
   return fresh
 }
 

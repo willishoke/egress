@@ -15,11 +15,6 @@ export type ValueCoercible = boolean | number | number[] | number[][]
 /** A register initialiser: either a bare value or { init, type }. */
 export type RegInit = ValueCoercible | { init: ValueCoercible; type: string }
 
-// ---------- Bounded types ----------
-
-/** Value bounds for a port: [lo, hi]. null on either side = unbounded. */
-export type Bounds = [number | null, number | null]
-
 // ---------- ProgramDef ----------
 
 /**
@@ -45,8 +40,6 @@ export interface ProgramDef {
   delayUpdateNodes: ExprNode[]
   nestedCalls: NestedCall[]
   breaksCycles: boolean
-  inputBounds: (Bounds | null)[]
-  outputBounds: (Bounds | null)[]
 }
 
 // ---------- NestedCall ----------

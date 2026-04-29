@@ -83,9 +83,9 @@ const SCALAR_KINDS: ReadonlySet<string> = new Set(['float', 'int', 'bool'])
 const SCALAR_ALIASES: ReadonlySet<string> = new Set([
   // bare scalars
   'float', 'int', 'bool',
-  // common builtin port-type aliases that pass through to ScalarKind
-  // (these stay as ScalarKind, not AliasTypeDef, since they have no
-  // bounds metadata — they're the user-facing names for raw types)
+  // common builtin port-type aliases that pass through to ScalarKind.
+  // they are user-facing names for the raw scalar types — no separate
+  // metadata, just the alias-to-base mapping.
   'signal', 'freq', 'unipolar', 'bipolar',
 ])
 
@@ -94,20 +94,6 @@ const BUILTIN_TYPE_TO_SCALAR: Record<string, ScalarKind> = {
   float: 'float', int: 'int', bool: 'bool',
   signal: 'float', freq: 'float', unipolar: 'float', bipolar: 'float',
   phase:  'float',
-}
-
-/** Builtin port-type aliases that carry implicit bounds. The legacy
- *  `BOUNDED_TYPE_ALIASES` table in `compiler/session.ts:233` is the
- *  source of truth for these bounds; the elaborator must mirror them
- *  so a port declared `signal` carries `[-1, 1]` bounds in the
- *  resolved IR. Without this, downstream slot-allocation drops the
- *  bounds and the byte-equality dual-run gate diverges. */
-const BUILTIN_TYPE_BOUNDS: Record<string, [number | null, number | null]> = {
-  signal:   [-1, 1],
-  bipolar:  [-1, 1],
-  unipolar: [0, 1],
-  phase:    [0, 1],
-  freq:     [0, null],
 }
 
 /** Builtin nullary calls. Both snake_case and camelCase forms are
@@ -427,7 +413,6 @@ function resolveAliasTypeDef(td: ParsedAliasTypeDef, scope: Scope): AliasTypeDef
     op: 'aliasTypeDef',
     name: td.name,
     base: td.base.name as ScalarKind,
-    bounds: td.bounds,
   }
 }
 
@@ -459,8 +444,6 @@ function resolveInputPort(spec: ParsedProgramPort, scope: Scope): InputDecl {
   const decl: InputDecl = { op: 'inputDecl', name: spec.name }
   if (spec.type !== undefined) decl.type = resolvePortType(spec.type, scope)
   if (spec.default !== undefined) decl.default = resolveExpr(spec.default, scope)
-  const bounds = spec.bounds ?? aliasBounds(spec.type, scope)
-  if (bounds !== undefined) decl.bounds = bounds
   return decl
 }
 
@@ -470,24 +453,7 @@ function resolveOutputPort(spec: ParsedProgramPort, scope: Scope): OutputDecl {
   }
   const decl: OutputDecl = { op: 'outputDecl', name: spec.name }
   if (spec.type !== undefined) decl.type = resolvePortType(spec.type, scope)
-  const bounds = spec.bounds ?? aliasBounds(spec.type, scope)
-  if (bounds !== undefined) decl.bounds = bounds
   return decl
-}
-
-/** Resolve implicit bounds from a port-type's alias. Returns undefined
- *  when the type is structured (array), missing, or the named alias has
- *  no bounds. User-declared aliases override builtin bounds; explicit
- *  port-spec bounds (`spec.bounds`) override both and are checked at
- *  the call site. */
-function aliasBounds(
-  pt: ParsedPortType | undefined,
-  scope: Scope,
-): [number | null, number | null] | undefined {
-  if (pt === undefined || !isParsedNameRef(pt)) return undefined
-  const td = lookupTypeDef(scope, pt.name)
-  if (td && td.op === 'aliasTypeDef') return td.bounds
-  return BUILTIN_TYPE_BOUNDS[pt.name]
 }
 
 function resolvePortType(pt: ParsedPortType, scope: Scope): PortType {

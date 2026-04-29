@@ -16,7 +16,6 @@ import { ProgramType } from './program_types.js'
 import { exprDependencies, reachableInstances, buildDependencyGraph, topologicalSort } from './compiler.js'
 import type { RawTypeArgs } from './specialize.js'
 import { Float, portTypeEqual, type PortType } from './term.js'
-import type { Bounds } from './program_types.js'
 import { raiseProgram } from './parse/raise.js'
 import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
 import { compileResolvedToProgramDef } from './ir/strata.js'
@@ -42,12 +41,11 @@ export type PortTypeDecl = string | { kind: 'array'; element: string; shape: Sha
 // view of that JSON — the runtime value is a plain object; the TypeScript
 // types only constrain the fields we care about.
 
-/** Port declaration: scalar/alias name or `{name, type?, default?, bounds?}`. */
+/** Port declaration: scalar/alias name or `{name, type?, default?}`. */
 export interface ProgramPortSpec {
   name: string
   type?: PortTypeDecl
   default?: ExprNode
-  bounds?: [number | null, number | null]
 }
 
 export interface ProgramPorts {
@@ -329,7 +327,7 @@ export function loadProgramAsSession(
   // Register type defs (aliases, sums, structs) from ports.type_defs before anything else
   for (const td of prog.ports?.type_defs ?? []) {
     if (td.kind === 'alias') {
-      session.typeAliasRegistry.set(td.name, { base: td.base, bounds: td.bounds })
+      session.typeAliasRegistry.set(td.name, { base: td.base })
     } else if (td.kind === 'sum') {
       session.sumTypeRegistry.set(td.name, {
         name: td.name,
@@ -416,7 +414,7 @@ export function loadProgramAsType(
   // Register type defs (aliases, sums, structs) from type_defs before processing subprograms
   for (const td of prog.ports?.type_defs ?? []) {
     if (td.kind === 'alias' && session.typeAliasRegistry) {
-      session.typeAliasRegistry.set(td.name, { base: td.base, bounds: td.bounds })
+      session.typeAliasRegistry.set(td.name, { base: td.base })
     } else if (td.kind === 'sum' && session.sumTypeRegistry) {
       session.sumTypeRegistry.set(td.name, {
         name: td.name,
@@ -491,7 +489,7 @@ export function mergeProgramIntoSession(
   // Register type defs (aliases, sums, structs) from type_defs (additive)
   for (const td of prog.ports?.type_defs ?? []) {
     if (td.kind === 'alias') {
-      session.typeAliasRegistry.set(td.name, { base: td.base, bounds: td.bounds })
+      session.typeAliasRegistry.set(td.name, { base: td.base })
     } else if (td.kind === 'sum') {
       session.sumTypeRegistry.set(td.name, {
         name: td.name,
@@ -870,12 +868,10 @@ export function exportSessionAsProgram(
     return node
   }
 
-  // Gather port type + bounds metadata from the source instances so exported
+  // Gather port type metadata from the source instances so exported
   // inputs/outputs round-trip through re-parse.
   const isDefaultPortType = (t: PortType | undefined): boolean =>
     t === undefined || portTypeEqual(t, Float)
-  const boundsProvided = (b: Bounds | null | undefined): b is Bounds =>
-    !!b && (b[0] !== null || b[1] !== null)
 
   const portTypeToDecl = (t: PortType): PortTypeDecl => {
     switch (t.tag) {
@@ -909,13 +905,11 @@ export function exportSessionAsProgram(
     const inst = session.instanceRegistry.get(instName)!
     const idx = inst.inputIndex(portName)
     const pt = inst.inputPortType(idx)
-    const bnds = inst._def.inputBounds[idx]
     const dflt = inputDefaults[inputName]
     const entry: ProgramPortSpec = { name: inputName }
     if (!isDefaultPortType(pt)) entry.type = portTypeToDecl(pt!)
-    if (boundsProvided(bnds)) entry.bounds = bnds
     if (dflt !== undefined) entry.default = dflt
-    return entry.type === undefined && entry.bounds === undefined && entry.default === undefined
+    return entry.type === undefined && entry.default === undefined
       ? inputName
       : entry
   })
@@ -925,11 +919,9 @@ export function exportSessionAsProgram(
     const inst = session.instanceRegistry.get(ref.instance)!
     const idx = inst.outputIndex(ref.output)
     const pt = inst.outputPortType(idx)
-    const bnds = inst._def.outputBounds[idx]
     const entry: ProgramPortSpec = { name: outName }
     if (!isDefaultPortType(pt)) entry.type = portTypeToDecl(pt!)
-    if (boundsProvided(bnds)) entry.bounds = bnds
-    return entry.type === undefined && entry.bounds === undefined ? outName : entry
+    return entry.type === undefined ? outName : entry
   })
 
   // Topologically sort reachable instances so dependencies come first.

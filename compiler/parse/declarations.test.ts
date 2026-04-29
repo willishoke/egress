@@ -52,36 +52,11 @@ describe('declarations — port specs', () => {
     expect(p.ports?.inputs).toEqual([{ name: 'freq', type: nameRef('freq'), default: 220 }])
   })
 
-  test('input with bounds', () => {
-    const p = parseProgram(`
-      program X(g: float in [0, 1]) -> (out: signal) { out = 0 }
-    `)
-    expect(p.ports?.inputs).toEqual([
-      { name: 'g', type: nameRef('float'), bounds: [0, 1] },
-    ])
-  })
-
-  test('input with default and bounds', () => {
-    const p = parseProgram(`
-      program X(g: float = 0.5 in [0, 1]) -> (out: signal) { out = 0 }
-    `)
-    expect(p.ports?.inputs).toEqual([
-      { name: 'g', type: nameRef('float'), default: 0.5, bounds: [0, 1] },
-    ])
-  })
-
-  test('null bound is accepted', () => {
-    const p = parseProgram(`
-      program X(g: float in [null, 1]) -> (out: signal) { out = 0 }
-    `)
-    expect((p.ports!.inputs![0] as ProgramPortSpec).bounds).toEqual([null, 1])
-  })
-
-  test('negative literal bound', () => {
-    const p = parseProgram(`
-      program X(s: float in [-1, 1]) -> (out: signal) { out = 0 }
-    `)
-    expect((p.ports!.inputs![0] as ProgramPortSpec).bounds).toEqual([-1, 1])
+  test('bounds syntax (`in [...]`) is rejected', () => {
+    // P0.4 removed bounds entirely from the type system; the parser no
+    // longer accepts the `in [lo, hi]` annotation on port specs.
+    expect(() => parseProgram('program X(g: float in [0, 1]) -> (out: signal) { out = 0 }'))
+      .toThrow(/expected closing/)
   })
 
   test('output cannot have a default', () => {

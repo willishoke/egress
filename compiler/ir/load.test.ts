@@ -125,36 +125,6 @@ describe('loadProgramDefFromResolved — reference identity', () => {
   })
 })
 
-describe('loadProgramDefFromResolved — bounds', () => {
-  test('explicit bounds on InputDecl/OutputDecl carry through', () => {
-    // The parser surface doesn't expose bounds today, so we hand-build
-    // the resolved IR to exercise the bounds path directly.
-    const inDecl: InputDecl  = { op: 'inputDecl',  name: 'a',   type: { kind: 'scalar', scalar: 'float' }, bounds: [-1, 1] }
-    const outDecl: OutputDecl = { op: 'outputDecl', name: 'out', type: { kind: 'scalar', scalar: 'float' }, bounds: [0, 1] }
-    const prog: ResolvedProgram = {
-      op: 'program',
-      name: 'X',
-      typeParams: [],
-      ports: { inputs: [inDecl], outputs: [outDecl], typeDefs: [] },
-      body: {
-        op: 'block',
-        decls: [],
-        assigns: [{ op: 'outputAssign', target: outDecl, expr: { op: 'inputRef', decl: inDecl } }],
-      },
-    }
-    const t = loadProgramDefFromResolved(prog, emptySession())
-    expect(t._def.inputBounds).toEqual([[-1, 1]])
-    expect(t._def.outputBounds).toEqual([[0, 1]])
-  })
-
-  test('absent bounds are null', () => {
-    const prog = elab('program X(a: float) -> (out: float) { out = a }')
-    const t = loadProgramDefFromResolved(prog, emptySession())
-    expect(t._def.inputBounds).toEqual([null])
-    expect(t._def.outputBounds).toEqual([null])
-  })
-})
-
 describe('resolvedToSlotted — leaf shapes', () => {
   test('numeric and boolean literals pass through', () => {
     const slots = { inputs: new Map(), regs: new Map(), delays: new Map(), instances: new Map() }

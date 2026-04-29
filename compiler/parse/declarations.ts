@@ -13,8 +13,8 @@
  *     name: string,
  *     type_params?: { N: { type: 'int', default?: number }, ... },
  *     ports?: {
- *       inputs?:  Array<string | { name, type?, default?, bounds? }>,
- *       outputs?: Array<string | { name, type?, bounds? }>,
+ *       inputs?:  Array<string | { name, type?, default? }>,
+ *       outputs?: Array<string | { name, type? }>,
  *     },
  *     body: BlockNode,
  *   }
@@ -28,9 +28,7 @@
  *    array form `Element[Shape...]` where each shape dim is a number
  *    literal or an identifier (resolved as `typeParam` at parse time
  *    since the parser tracks declared type-param names from the header)
- *  - Bounds: `in [lo, hi]` after a port type
- *  - Input ports: `name: type [= default] [in [lo, hi]]`; outputs omit
- *    the default
+ *  - Input ports: `name: type [= default]`; outputs omit the default
  *  - Bare-name ports (just `name`) emit a string entry
  *  - Nested `program` decls in body, recursive
  *
@@ -267,15 +265,13 @@ function parseSumVariant(ctx: Ctx, enumName: string): SumVariant {
   return { name: variantName, payload }
 }
 
-/** type AliasName = baseScalar in [lo, hi] */
+/** type AliasName = baseScalar */
 function parseAliasDecl(ctx: Ctx): AliasTypeDef {
   consume(ctx, 'type', 'type keyword')
   const name = consume(ctx, 'ident', 'alias name').value as string
   consume(ctx, '=', `\`=\` after alias '${name}'`)
   const baseTok = consume(ctx, 'ident', `base type for alias '${name}'`)
-  consume(ctx, 'in', `\`in\` after base type for alias '${name}'`)
-  const bounds = parseBounds(ctx)
-  return { kind: 'alias', name, base: nameRef(baseTok.value as string), bounds }
+  return { kind: 'alias', name, base: nameRef(baseTok.value as string) }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -324,10 +320,8 @@ function parsePortList(ctx: Ctx, allowDefault: boolean): ProgramPort[] {
  *    name = default                   (no explicit type)
  *    name: type
  *    name: type = default
- *    name: type in [lo, hi]
- *    name: type = default in [lo, hi]
  *  Outputs accept the same forms minus `= default`.
- *  When the spec has only a name (no type, default, or bounds), emits the
+ *  When the spec has only a name (no type, default), emits the
  *  bare-string form to match stdlib JSON convention. The untyped-with-
  *  default form preserves legacy stdlib programs (e.g. BitCrusher,
  *  LadderFilter) whose port specs declare a default but no type. */
@@ -337,7 +331,6 @@ function parsePortSpec(ctx: Ctx, allowDefault: boolean): ProgramPort {
 
   let type: PortTypeDecl | undefined
   let defaultExpr: ExprNode | undefined
-  let bounds: [number | null, number | null] | undefined
 
   if (peek(ctx).kind === ':') {
     ctx.i++  // consume `:`
@@ -355,16 +348,9 @@ function parsePortSpec(ctx: Ctx, allowDefault: boolean): ProgramPort {
     defaultExpr = parseExprAt(ctx)
   }
 
-  // Optional `in [lo, hi]`
-  if (peek(ctx).kind === 'in') {
-    ctx.i++
-    bounds = parseBounds(ctx)
-  }
-
   const spec: ProgramPortSpec = { name }
   if (type !== undefined) spec.type = type
   if (defaultExpr !== undefined) spec.default = defaultExpr
-  if (bounds !== undefined) spec.bounds = bounds
   return spec
 }
 
@@ -406,37 +392,6 @@ function parseShapeDim(ctx: Ctx): ShapeDim {
     return nameRef(t.value as string)
   }
   throw new ParseError(`expected number or identifier in array shape, got ${formatTok(t)}`, t)
-}
-
-/** Parse `[lo, hi]` after `in`. Each side may be `null` (sentinel) to
- *  indicate "no bound on this side", or a number literal (signed). */
-function parseBounds(ctx: Ctx): [number | null, number | null] {
-  consume(ctx, '[', '`[` opening bounds')
-  const lo = parseBound(ctx)
-  consume(ctx, ',', '`,` between bound lo/hi')
-  const hi = parseBound(ctx)
-  consume(ctx, ']', '`]` closing bounds')
-  return [lo, hi]
-}
-
-/** Parse a single bound: `null` sentinel, or a signed numeric literal.
- *  Direct lexer handling — no need to detour through the expression
- *  parser (which would only constant-fold `neg(<num>)` into a negative
- *  number anyway). The grammar is just `'-'? num | 'null'`. */
-function parseBound(ctx: Ctx): number | null {
-  const t = peek(ctx)
-  if (isContextualKw(t, 'null')) {
-    ctx.i++
-    return null
-  }
-  let sign = 1
-  if (eat(ctx, '-')) sign = -1
-  const numTok = peek(ctx)
-  if (numTok.kind !== 'num') {
-    throw new ParseError(`bound must be a number literal or 'null', got ${formatTok(t)}`, t)
-  }
-  ctx.i++
-  return sign * (numTok.value as number)
 }
 
 // ─────────────────────────────────────────────────────────────

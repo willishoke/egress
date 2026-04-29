@@ -83,7 +83,6 @@ export interface AliasTypeDef {
   op: 'aliasTypeDef'
   name: string
   base: ScalarKind
-  bounds: [number | null, number | null]
 }
 
 export type TypeDef = StructTypeDef | SumTypeDef | AliasTypeDef
@@ -111,14 +110,12 @@ export interface InputDecl {
   name: string
   type?: PortType
   default?: ResolvedExpr
-  bounds?: [number | null, number | null]
 }
 
 export interface OutputDecl {
   op: 'outputDecl'
   name: string
   type?: PortType
-  bounds?: [number | null, number | null]
 }
 
 export interface TypeParamDecl {
@@ -270,7 +267,7 @@ export interface UnaryOpNode {
   args: [ResolvedExpr]
 }
 
-/** `clamp(value, lo, hi)` — preserves bounds. */
+/** `clamp(value, lo, hi)` — explicit user-written bound enforcement. */
 export interface ClampNode {
   op: 'clamp'
   args: [ResolvedExpr, ResolvedExpr, ResolvedExpr]

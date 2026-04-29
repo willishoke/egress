@@ -218,11 +218,16 @@ function buildInstanceDecl(
     resolvedType = specializeProgram(template, subst)
   }
 
+  // After buildInstanceDecl, `resolvedType` is fully specialized (empty
+  // typeParams). `inlineInstances` will then short-circuit on the
+  // empty-typeParams + empty-typeArgs path. Carrying typeArgsList through
+  // would re-trigger specializeProgram against an already-specialized
+  // template, which throws "type-arg X is not a declared type-param".
   return {
     op: 'instanceDecl',
     name,
     type: resolvedType,
-    typeArgs: typeArgsList,
+    typeArgs: [],
     inputs: [],
   }
 }

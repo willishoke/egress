@@ -38,8 +38,7 @@ import { makeSession, resolveProgramType } from './session.js'
 import type { ExprNode } from './expr.js'
 import { loadStdlib } from './program.js'
 import { applyFlatPlan } from './apply_plan.js'
-import { flattenExpressions } from './flatten.js'
-import { interpretSamples } from './interpret.js'
+import { interpretSession } from './interpret_resolved'
 import { EDGE_FIXTURES } from './__fixtures__/equiv/edge_cases.js'
 import { loadProgramAsType } from './program.js'
 
@@ -119,8 +118,7 @@ function runEquivalence(
   // Interpreter path: run TOTAL_SAMPLES samples in one shot. The
   // interpreter advances sampleIndex from 0..TOTAL_SAMPLES-1 with no
   // buffer boundaries, mirroring the JIT's continuous state evolution.
-  const flat = flattenExpressions(session)
-  const interpDigest = interpretSamples(flat, TOTAL_SAMPLES)
+  const interpDigest = interpretSession(session, TOTAL_SAMPLES)
 
   expect(interpDigest.length).toBe(TOTAL_SAMPLES)
 

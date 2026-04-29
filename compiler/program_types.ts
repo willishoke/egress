@@ -1,11 +1,16 @@
 /**
- * program_types.ts — Data types for the compiler's internal program representation.
+ * program_types.ts — Data types for the compiler's internal program
+ * representation.
  *
- * ProgramDef is the slot-indexed IR that the flattener consumes.
- * ProgramType and ProgramInstance are thin wrappers used by the type/instance registries.
+ * Post-D3-b: `ProgramDef` is metadata-only. The runtime IR lives in
+ * `compiler/ir/nodes.ts:ResolvedProgram` and is wired through
+ * `compileSession`. ProgramType / ProgramInstance survive as thin
+ * wrappers used by the type/instance registries; their fields back
+ * MCP introspection tools and `inputName → default` seeding in
+ * `program.ts:loadProgramAsSession`.
  */
 
-import type { SignalExpr, ExprCoercible, ExprNode } from './expr.js'
+import type { ExprCoercible, ExprNode } from './expr.js'
 import type { PortType } from './term.js'
 
 // ---------- Value helpers ----------
@@ -18,9 +23,8 @@ export type RegInit = ValueCoercible | { init: ValueCoercible; type: string }
 // ---------- ProgramDef ----------
 
 /**
- * The compiler's internal representation of a program — slot-indexed ExprNode trees
- * ready for the flattener's register allocation. Built from a ProgramNode
- * (tropical_program_2) by converting names to integer slot IDs.
+ * Type-registry metadata for a program. Built from a `ResolvedProgram`
+ * by `compiler/ir/program_type_builder.ts:resolvedToProgramType`.
  */
 export interface ProgramDef {
   typeName: string
@@ -30,24 +34,10 @@ export interface ProgramDef {
   outputPortTypes: (PortType | undefined)[]
   registerNames: string[]
   registerPortTypes: (PortType | undefined)[]
-  registerInitValues: ValueCoercible[]
-  sampleRate: number
+  /** Default expressions per input port name; seeded into
+   *  `session.inputExprNodes` by `loadProgramAsSession` when the user
+   *  doesn't wire that input. */
   rawInputDefaults: Record<string, ExprNode>
-  inputDefaults: (SignalExpr | null)[]
-  delayInitValues: number[]
-  outputExprNodes: ExprNode[]
-  registerExprNodes: (ExprNode | null)[]
-  delayUpdateNodes: ExprNode[]
-  nestedCalls: NestedCall[]
-  breaksCycles: boolean
-}
-
-// ---------- NestedCall ----------
-
-/** Captured metadata for a nested program call. */
-export interface NestedCall {
-  programDef: ProgramDef
-  callArgNodes: ExprNode[]
 }
 
 // ---------- ProgramType ----------

@@ -2,10 +2,8 @@
  * compiler/ir/compile_resolved.ts — single-program tropical_plan_4 emit boundary.
  *
  * Phase D D1 entry point. Takes a `ResolvedProgram` (post-strata: no
- * instances, no combinators, no instance refs) and produces the same
- * `tropical_plan_4` JSON that the legacy `flattenSession` /
- * `loadProgramDefFromResolved` pair would produce for an equivalent
- * single-instance session.
+ * instances, no combinators, no instance refs) and produces a
+ * `tropical_plan_4` JSON consumed by the C++ JIT.
  *
  * Boundaries:
  *   - This function handles a *single* program. Session-level
@@ -27,7 +25,7 @@
 import type { ResolvedProgram, ResolvedExpr, OutputDecl, RegDecl, DelayDecl } from './nodes.js'
 import type { ExprNode } from '../expr.js'
 import type { FlatPlan } from '../flat_plan'
-import { resolvedToSlotted } from './load.js'
+import { resolvedToSlotted } from './lower_to_exprnode.js'
 import { buildSlotMaps, type SlotMaps } from './slots.js'
 import { emitNumericProgram, type ScalarType } from '../emit_numeric.js'
 

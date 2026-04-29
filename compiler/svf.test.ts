@@ -1,8 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON } from './session'
 import { loadStdlib } from './program'
-import { flattenExpressions } from './flatten'
-import { interpretSamples } from './interpret'
+import { interpretSession } from './interpret_resolved'
 
 describe('stdlib SVF', () => {
   test('flattens and produces a decaying impulse response on bp output', () => {
@@ -28,8 +27,7 @@ describe('stdlib SVF', () => {
       audio_outputs: [{ instance: 'svf', output: 'bp' }],
     }, session)
 
-    const flat = flattenExpressions(session)
-    const out = interpretSamples(flat, 2000)
+    const out = interpretSession(session, 2000)
 
     let earlyPeak = 0
     for (let i = 0; i < 200; i++) earlyPeak = Math.max(earlyPeak, Math.abs(out[i]))

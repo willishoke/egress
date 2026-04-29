@@ -3,10 +3,8 @@
  *
  * Flow: SessionState → compileSession() → tropical_plan_4 JSON → runtime.loadPlan()
  *
- * As of Phase D D2, the resolved-IR pipeline (`compile_session.ts`) is
- * the production runtime path. The legacy `flatten.ts` survives until
- * D3 deletes it; until then, callers that want the legacy plan can
- * still call `flattenSession` directly.
+ * The resolved-IR pipeline (`compile_session.ts`) is the production
+ * runtime path; the legacy `flatten.ts` was retired in Phase D D3.
  */
 
 import type { SessionState } from './session'

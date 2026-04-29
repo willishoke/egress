@@ -20,8 +20,7 @@ import { makeSession, loadJSON } from './session'
 import { loadStdlib as loadBuiltins, loadProgramAsType } from './program'
 import type { ProgramNode, ProgramFile } from './program'
 import { applySessionWiring } from './apply_plan'
-import { flattenExpressions } from './flatten'
-import { interpretSamples } from './interpret'
+import { interpretSession } from './interpret_resolved'
 import {
   renderFrames,
   peak,

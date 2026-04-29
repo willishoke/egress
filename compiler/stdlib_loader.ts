@@ -122,7 +122,7 @@ export function loadStdlibFromMap(
       continue
     }
     if (session.typeRegistry.has(name)) continue
-    const type = compileResolvedToProgramDef(prog, new Map(), session)
+    const type = compileResolvedToProgramDef(prog, new Map())
     session.typeRegistry.set(name, type)
     session.resolvedRegistry.set(name, prog)
   }
@@ -186,7 +186,7 @@ export function loadStdlibFromSources(
       continue
     }
     if (session.typeRegistry.has(name)) continue
-    const type = compileResolvedToProgramDef(prog, new Map(), session)
+    const type = compileResolvedToProgramDef(prog, new Map())
     session.typeRegistry.set(name, type)
     session.resolvedRegistry.set(name, prog)
   }

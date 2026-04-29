@@ -281,7 +281,7 @@ export function resolveProgramType(
       }
       subst.set(decl, value)
     }
-    const type = compileResolvedToProgramDef(template, subst, session)
+    const type = compileResolvedToProgramDef(template, subst)
     type._def.typeName = key
     session.specializationCache.set(key, type)
     return { type, typeArgs: resolved }

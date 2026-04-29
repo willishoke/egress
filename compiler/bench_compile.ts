@@ -51,12 +51,12 @@ for (const [typeName, instanceName] of modules) {
 }
 
 console.log(`\nModules: ${session.instanceRegistry.size}`)
-console.log('Starting full flattenSession...')
+console.log('Starting full compileSession...')
 
 const t0 = performance.now()
 const plan = compileSession(session)
 const t1 = performance.now()
-console.log(`flattenSession: ${(t1 - t0).toFixed(1)}ms`)
+console.log(`compileSession: ${(t1 - t0).toFixed(1)}ms`)
 console.log(`  instructions: ${plan.instructions.length}`)
 console.log(`  registers: ${plan.register_targets.length}`)
 console.log(`  array_slots: ${plan.array_slot_sizes.length} (sizes: ${plan.array_slot_sizes.join(', ')})`)

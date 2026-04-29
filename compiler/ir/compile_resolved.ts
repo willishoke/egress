@@ -46,9 +46,8 @@ export function compileResolved(prog: ResolvedProgram): FlatPlan {
 
   const memo = new WeakMap<object, ExprNode>()
   const regCount = slots.regDecls.length
-  const structHashCache = new Map<string, ExprNode>()
   const lower = (e: ResolvedExpr): ExprNode =>
-    structuralDedup(resolveDelayValues(resolvedToSlotted(e, slots, memo), regCount), structHashCache)
+    resolveDelayValues(resolvedToSlotted(e, slots, memo), regCount)
 
   // ── Output expressions ──
   const outputExprByDecl = new Map<OutputDecl, ResolvedExpr>()
@@ -178,44 +177,6 @@ function delayInit(d: DelayDecl): number {
   if (typeof d.init === 'number') return d.init
   if (typeof d.init === 'boolean') return d.init ? 1 : 0
   return 0
-}
-
-/** Structural-dedup pass: walk a lowered ExprNode tree and replace any
- *  subtree whose JSON-serialized form was seen before with the first
- *  occurrence's object identity. This is needed because the strata
- *  pipeline's `inlineInstances` produces fresh-identity nodes per
- *  instance clone — a chain of OnePoles ends up with structurally
- *  identical subtrees but distinct identities. emit_numeric's CSE is
- *  identity-keyed, so without structural dedup the same subtree emits
- *  N copies of its instructions (geometric blowup). The legacy
- *  flatten.ts pipeline preserves identity sharing through its
- *  per-program ExprNode references, so it doesn't need this pass.
- *
- *  Cost: bottom-up walk + JSON.stringify per subtree. For ladder, this
- *  collapses ~13050 instructions to the legacy's ~1957. The stringify
- *  cost is one-time per compile and bounded by tree size. */
-function structuralDedup(node: ExprNode, cache: Map<string, ExprNode>): ExprNode {
-  if (typeof node !== 'object' || node === null) return node
-  if (Array.isArray(node)) {
-    const out: ExprNode[] = node.map(item => structuralDedup(item, cache))
-    const key = JSON.stringify(out)
-    const cached = cache.get(key)
-    if (cached !== undefined) return cached
-    cache.set(key, out)
-    return out
-  }
-  // Recurse children first so leaves are canonicalized before we hash.
-  const fresh: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(node)) {
-    if (typeof v === 'object' && v !== null) fresh[k] = structuralDedup(v as ExprNode, cache)
-    else fresh[k] = v
-  }
-  const key = JSON.stringify(fresh)
-  const cached = cache.get(key)
-  if (cached !== undefined) return cached
-  const out = fresh as unknown as ExprNode
-  cache.set(key, out)
-  return out
 }
 
 /** Walk a lowered `ExprNode` tree and rewrite every `{op: 'delayValue',

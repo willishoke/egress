@@ -5,7 +5,7 @@
     "op": "block",
     "decls": [
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "clk",
         "program": "Clock",
         "inputs": {
@@ -16,7 +16,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "seq",
         "program": "Sequencer",
         "inputs": {
@@ -41,7 +41,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "osc",
         "program": "BlepSaw",
         "inputs": {

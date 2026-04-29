@@ -5,7 +5,7 @@
     "op": "block",
     "decls": [
       {
-        "op": "program_decl",
+        "op": "programDecl",
         "name": "ChordSeq",
         "program": {
           "op": "program",
@@ -14,19 +14,19 @@
             "op": "block",
             "decls": [
               {
-                "op": "reg_decl",
+                "op": "regDecl",
                 "name": "step",
                 "init": 0
               },
               {
-                "op": "reg_decl",
+                "op": "regDecl",
                 "name": "prev_gate",
                 "init": 0
               }
             ],
             "assigns": [
               {
-                "op": "output_assign",
+                "op": "outputAssign",
                 "name": "freq_a",
                 "expr": {
                   "op": "select",
@@ -47,7 +47,7 @@
                 }
               },
               {
-                "op": "output_assign",
+                "op": "outputAssign",
                 "name": "freq_c",
                 "expr": {
                   "op": "select",
@@ -68,7 +68,7 @@
                 }
               },
               {
-                "op": "output_assign",
+                "op": "outputAssign",
                 "name": "freq_e",
                 "expr": {
                   "op": "select",
@@ -89,7 +89,7 @@
                 }
               },
               {
-                "op": "output_assign",
+                "op": "outputAssign",
                 "name": "freq_g",
                 "expr": {
                   "op": "select",
@@ -110,7 +110,7 @@
                 }
               },
               {
-                "op": "next_update",
+                "op": "nextUpdate",
                 "target": {
                   "kind": "reg",
                   "name": "step"
@@ -168,7 +168,7 @@
                 }
               },
               {
-                "op": "next_update",
+                "op": "nextUpdate",
                 "target": {
                   "kind": "reg",
                   "name": "prev_gate"
@@ -195,7 +195,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock",
         "program": "Clock",
         "inputs": {
@@ -203,7 +203,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO_bass",
         "program": "VCO",
         "inputs": {
@@ -221,7 +221,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Env_bass",
         "program": "ADEnvelope",
         "inputs": {
@@ -235,7 +235,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCA_bass",
         "program": "VCA",
         "inputs": {
@@ -252,7 +252,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO_pad_A",
         "program": "VCO",
         "inputs": {
@@ -264,7 +264,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO_pad_C",
         "program": "VCO",
         "inputs": {
@@ -276,7 +276,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO_pad_E",
         "program": "VCO",
         "inputs": {
@@ -288,7 +288,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCO_pad_G",
         "program": "VCO",
         "inputs": {
@@ -300,7 +300,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Env_pad",
         "program": "ADSREnvelope",
         "inputs": {
@@ -312,7 +312,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "VCA_pad",
         "program": "VCA",
         "inputs": {
@@ -365,7 +365,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Sidechain",
         "program": "Compressor",
         "inputs": {
@@ -425,7 +425,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Clock_chord",
         "program": "Clock",
         "inputs": {
@@ -433,7 +433,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Delay_pad",
         "program": "Delay",
         "inputs": {
@@ -448,7 +448,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "Seq",
         "program": "ChordSeq",
         "inputs": {

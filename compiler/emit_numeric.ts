@@ -150,18 +150,30 @@ class Emitter {
   private groupCounter = 0
   // Registered groups, exposed on FlatProgram.groups for the JIT to consume.
   private groups: GroupInfo[] = []
-  // CSE: memoize compiled results by (node identity, expected type).
+  // CSE: memoize compiled results by (structural id, expected type).
   //
-  // Identity-based lookup is O(1) vs O(JSON size) for structural hashing, which matters
-  // when expression DAGs have many shared subexpressions (e.g. nested module call chains).
+  // Identity-based keying is unsafe when callers (the new resolved-IR
+  // pipeline in particular) build expression trees by cloning and
+  // substitution — structurally identical subtrees end up with distinct
+  // identities, and identity-CSE emits N copies of the same instruction.
+  // See issue #131.
   //
-  // The inner key is the `expected` ScalarType (or '' for unconstrained). Bidirectional
-  // inference means the same ExprNode may compile differently under different expected
-  // types (literal 8 is float unconstrained, int under expected='int'). Collapsing those
-  // into a single memo entry would produce wrong-type operands at subsequent uses.
+  // The structural id is built bottom-up via a string-intern table:
+  // each subtree gets `${op}|${field=}|${child_id},...` interned to an
+  // integer. The intern table key is canonical so two structurally
+  // identical subtrees from different origins get the same id. The
+  // identity → id WeakMap caches per-node so each unique input object is
+  // walked at most once per compile.
   //
-  // Terminals are not memoized — they allocate nothing and return an Operand directly.
-  private memo = new WeakMap<object, Map<string, CompileResult>>()
+  // The expected ScalarType participates in the memo key because the
+  // same node compiles differently under different expected types
+  // (literal 8 is float unconstrained, int under expected='int').
+  //
+  // Terminals are not memoized — they allocate nothing and return an
+  // Operand directly.
+  private hashTable = new Map<string, number>()       // canonical key → struct id
+  private hashCache = new WeakMap<object, number>()   // node identity → struct id
+  private memo      = new Map<string, CompileResult>() // `${structId}:${expected}` → result
   // Map register ID → pre-allocated array slot for registers whose init value is an array.
   private arrayRegMap = new Map<number, { slot: number, size: number }>()
   // Type tracking: temp register slot → ScalarType
@@ -281,24 +293,60 @@ class Emitter {
     return 'float'
   }
 
+  /** Bottom-up structural id for a non-terminal ExprNode. Two trees
+   *  with the same shape get the same id; the WeakMap caches per-
+   *  identity so a single subtree object is walked at most once. */
+  private structuralId(node: object): number {
+    const cached = this.hashCache.get(node)
+    if (cached !== undefined) return cached
+    let key: string
+    if (Array.isArray(node)) {
+      key = `a:${node.map(c => this.structuralKey(c)).join(',')}`
+    } else {
+      const obj = node as Record<string, unknown>
+      const parts: string[] = [`op:${String(obj.op)}`]
+      const fieldNames = Object.keys(obj).filter(k => k !== 'op').sort()
+      for (const k of fieldNames) {
+        parts.push(`${k}=${this.structuralKey(obj[k])}`)
+      }
+      key = parts.join('|')
+    }
+    let id = this.hashTable.get(key)
+    if (id === undefined) {
+      id = this.hashTable.size
+      this.hashTable.set(key, id)
+    }
+    this.hashCache.set(node, id)
+    return id
+  }
+
+  /** Stringify a child value for the structural key. Primitive children
+   *  become `<type>:<value>`; object children recurse via structuralId
+   *  (which interns the canonical key). */
+  private structuralKey(v: unknown): string {
+    if (v === null) return 'null'
+    if (typeof v === 'number')  return `n:${v}`
+    if (typeof v === 'boolean') return `b:${v}`
+    if (typeof v === 'string')  return `s:${v}`
+    if (typeof v === 'object')  return `i:${this.structuralId(v as object)}`
+    return `u:${typeof v}`
+  }
+
   // ── Compile a node to an operand (emitting instructions as needed). ──
   compileNode(node: ExprNode, expected?: ScalarType): CompileResult {
     // Terminal shortcut — no allocation, skip memo
     const terminal = this.tryTerminal(node, expected)
     if (terminal !== null) return { isArray: false, op: terminal.op, scalarType: terminal.scalarType }
 
-    // CSE: check memo before allocating anything. Key by (node, expected).
-    const key = expected ?? ''
-    let bucket = this.memo.get(node as object)
-    const cached = bucket?.get(key)
+    // Structural CSE: same shape → same instructions. Key includes the
+    // expected ScalarType because bidirectional inference can produce
+    // different operand types from the same source node.
+    const key = `${this.structuralId(node as object)}:${expected ?? ''}`
+    const cached = this.memo.get(key)
     if (cached !== undefined) return cached
 
     const result = this.compileNodeUncached(node, expected)
-    if (!bucket) {
-      bucket = new Map()
-      this.memo.set(node as object, bucket)
-    }
-    bucket.set(key, result)
+    this.memo.set(key, result)
     return result
   }
 

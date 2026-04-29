@@ -5,7 +5,7 @@
     "op": "block",
     "decls": [
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco1",
         "program": "VCO",
         "inputs": {
@@ -39,7 +39,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco2",
         "program": "VCO",
         "inputs": {
@@ -73,7 +73,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco3",
         "program": "VCO",
         "inputs": {
@@ -107,7 +107,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "vco4",
         "program": "VCO",
         "inputs": {
@@ -141,7 +141,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d1",
         "program": "Delay",
         "inputs": {
@@ -156,7 +156,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d2",
         "program": "Delay",
         "inputs": {
@@ -171,7 +171,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d3",
         "program": "Delay",
         "inputs": {
@@ -186,7 +186,7 @@
         }
       },
       {
-        "op": "instance_decl",
+        "op": "instanceDecl",
         "name": "d4",
         "program": "Delay",
         "inputs": {

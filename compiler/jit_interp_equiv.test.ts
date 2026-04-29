@@ -227,10 +227,10 @@ describe('JIT ↔ interpreter equivalence for gateable subgraphs', () => {
       name: 'patch',
       body: { op: 'block', decls: [
         { op: 'instanceDecl', name: 'ladder', program: 'LadderFilter',
-          inputs: { input: 0.5, freq: 1000, res: 0.5 },
+          inputs: { input: 0.5, cutoff: 1000, resonance: 0.5 },
           gateable: true, gate_input: gate },
       ]},
-      audio_outputs: [{ instance: 'ladder', output: 'out' }],
+      audio_outputs: [{ instance: 'ladder', output: 'lp' }],
     }, session)
 
     applySessionWiring(session)

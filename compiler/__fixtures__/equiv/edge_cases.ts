@@ -1,0 +1,144 @@
+/**
+ * Edge-case fixtures for jit_interp_stdlib_equiv.test.ts (Phase D P0.1).
+ *
+ * Each fixture is a hand-built program that stresses an axis the stdlib
+ * corpus doesn't cover well: division by zero, sqrt of negatives, denormal
+ * propagation, conditional branches with NaN inputs, etc. The fixtures
+ * are programs (not patches) so they can be loaded as types and instantiated.
+ *
+ * Documents expected behavior at the boundary of the C++ FTZ/DAZ flag
+ * (flush-to-zero / denormals-are-zero on x86). Where the JIT and pure-TS
+ * interpreter diverge by design (e.g. `0/0` is NaN in interpret, 0 in JIT
+ * because of div-guard), the fixture's `tolerance` is loosened or the
+ * fixture is excluded from strict comparison.
+ */
+
+import type { ProgramNode } from '../../program.js'
+
+export interface EdgeFixture {
+  /** Display name for the test. */
+  name: string
+  /** Program node to load. */
+  program: ProgramNode
+  /** Inputs for the test instance — keyed by `${input_name}`. */
+  inputs?: Record<string, import('../../expr.js').ExprNode>
+  /** Output port name to read for the assertion (default: first output). */
+  output?: string
+  /** Tolerance for `toBeCloseTo` digit-of-precision check. Default 8. */
+  tolerance?: number
+  /** If set, sample[i] must be `Number.isFinite(...)` — catches NaN
+   *  propagation regressions even when both sides agree on a NaN. */
+  expectAllFinite?: boolean
+  /** If true, skip strict numeric agreement and only check finiteness. */
+  finitenessOnly?: boolean
+}
+
+/** div(x, 0) — both interpreter and JIT guard divide-by-zero, returning 0
+ *  rather than +Infinity/NaN. This fixture pins that contract. */
+const divByZero: EdgeFixture = {
+  name: 'div_by_zero',
+  program: {
+    op: 'program',
+    name: 'DivByZero',
+    ports: { inputs: [{ name: 'x', default: 1 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        expr: { op: 'div', args: [{ op: 'input', name: 'x' }, 0] } }],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 10,
+}
+
+/** sqrt of a guaranteed-negative value. JS Math.sqrt(-1) is NaN; the JIT
+ *  also produces NaN. Propagation is consistent on both sides. We assert
+ *  finiteness fails for at least one sample (the negative branch) — a
+ *  pure equivalence check would need NaN-aware comparison. */
+const sqrtNegative: EdgeFixture = {
+  name: 'sqrt_negative',
+  program: {
+    op: 'program',
+    name: 'SqrtNegative',
+    ports: { inputs: [{ name: 'x', default: -1 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        expr: { op: 'sqrt', args: [{ op: 'input', name: 'x' }] } }],
+    },
+  },
+  finitenessOnly: true,  // both sides produce NaN; agreement on NaN is
+                         // not testable via `toBeCloseTo`.
+}
+
+/** 1e-310 * 1e-310 produces a denormal on x86 without FTZ; with FTZ it
+ *  flushes to zero. The interpreter (pure JS) never flushes; the JIT may
+ *  or may not depending on the C++ build. The product is also below the
+ *  smallest-positive normal (~2.2e-308), so this hits the denormal range
+ *  before flushing. */
+const denormalMul: EdgeFixture = {
+  name: 'denormal_multiplication',
+  program: {
+    op: 'program',
+    name: 'DenormalMul',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        expr: { op: 'mul', args: [1e-310, 1e-310] } }],
+    },
+  },
+  expectAllFinite: true,
+  finitenessOnly: true,  // tolerance for denormal divergence is system-dependent.
+}
+
+/** A reg that accumulates a small per-sample increment. Over many
+ *  samples the running sum stays in healthy float range. Pin floor/abs
+ *  on a sub-normal input to confirm those pass through cleanly. */
+const stableAccumulator: EdgeFixture = {
+  name: 'stable_accumulator',
+  program: {
+    op: 'program',
+    name: 'StableAccum',
+    ports: { inputs: [{ name: 'inc', default: 1e-10 }], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [{ op: 'regDecl', name: 's', init: 0 }],
+      assigns: [
+        { op: 'outputAssign', name: 'out', expr: { op: 'reg', name: 's' } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 's' },
+          expr: { op: 'add', args: [{ op: 'reg', name: 's' }, { op: 'input', name: 'inc' }] } },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** Conditional select where one branch produces a special value. JIT
+ *  evaluates both branches eagerly (no short-circuit). */
+const selectWithSpecials: EdgeFixture = {
+  name: 'select_with_special_values',
+  program: {
+    op: 'program',
+    name: 'SelectSpecial',
+    ports: { inputs: [{ name: 'gate', default: 1 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        // gate ? 0.5 : (1.0 / 0.0)
+        expr: { op: 'select', args: [
+          { op: 'input', name: 'gate' },
+          0.5,
+          { op: 'div', args: [1.0, 0.0] },
+        ] },
+      }],
+    },
+  },
+  // With gate=1, output should be 0.5 sample-for-sample.
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+export const EDGE_FIXTURES: EdgeFixture[] = [
+  divByZero,
+  sqrtNegative,
+  denormalMul,
+  stableAccumulator,
+  selectWithSpecials,
+]

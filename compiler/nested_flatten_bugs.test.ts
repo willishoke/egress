@@ -1,84 +1,27 @@
 /**
- * Regression tests for two flatten.ts bugs discovered during bubble-synth:
+ * Regression tests originally written for two flatten.ts bugs in
+ * bubble-synth:
  *
- * Bug 1: Outer program's delay_ref inside a nested instance's input wiring
- *        survives into the flat plan as unresolved delay_value(node_id),
- *        because collectNestedRegisterExprs' caller doesn't run
- *        resolveDelayValues after substituteInputs.
+ *   Bug 1: Outer program's delay_ref inside a nested instance's input
+ *          wiring survived as unresolved delay_value(node_id).
+ *   Bug 2: Wrapping a stateful stdlib program in program_decl produced
+ *          wrong output (zero or unbounded amplification).
  *
- * Bug 2: Wrapping a stdlib program that has internal state (delays and/or
- *        nested-call register updates) in a program_decl produces wrong
- *        output — either zero, or unbounded amplification on a sum of
- *        such wrapped instances.
+ * Post-D2-cutover, both shapes go through the strata pipeline +
+ * `compileSession`. The leak-detection assertion is structurally
+ * impossible to fail (inlineInstances + buildSlotMaps would refuse to
+ * produce a delayRef whose decl isn't in the body), so we drop it.
+ * The audio-equivalence assertions (wrapped == bare) survive — they
+ * stay relevant whatever the pipeline.
  */
 
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON } from './session'
 import { loadStdlib } from './program'
-import { flattenExpressions } from './flatten'
-import { interpretSamples } from './interpret'
+import { interpretSession } from './interpret_resolved'
 import type { ProgramFile } from './program'
 
-function countDelayValueLeaks(node: unknown): number {
-  if (!node || typeof node !== 'object') return 0
-  const obj = node as Record<string, unknown>
-  if (obj.op === 'delayValue') return 1
-  let n = 0
-  for (const v of Object.values(obj)) {
-    if (Array.isArray(v)) for (const el of v) n += countDelayValueLeaks(el)
-    else if (v && typeof v === 'object') n += countDelayValueLeaks(v)
-  }
-  return n
-}
-
-describe('flatten bug 1 — outer delay_ref inside nested input wiring', () => {
-  test('Wrap with a delay_decl piped into inner OnePole input — no delay_value leaks', () => {
-    const session = makeSession(44100)
-    loadStdlib(session)
-    loadJSON({
-      schema: 'tropical_program_2',
-      name: 't',
-      body: { op: 'block', decls: [
-        { op: 'programDecl', name: 'Wrap', program: {
-          op: 'program', name: 'Wrap',
-          ports: {
-            inputs: [{ name: 'x', type: 'signal', default: 0 }],
-            outputs: [{ name: 'out', type: 'float' }],
-          },
-          body: { op: 'block', decls: [
-            { op: 'delayDecl', name: 'prev_x',
-              update: { op: 'input', name: 'x' }, init: 0 },
-            { op: 'instanceDecl', name: 'op', program: 'OnePole', inputs: {
-              // Inner instance's input wiring references Wrap's own delay_ref.
-              // This is the exact pattern that was tripping flatten.ts.
-              input: {
-                op: 'add',
-                args: [
-                  { op: 'input', name: 'x' },
-                  { op: 'delayRef', id: 'prev_x' },
-                ],
-              },
-              g: 0.1,
-            }},
-          ], assigns: [
-            { op: 'outputAssign', name: 'out', expr: { op: 'nestedOut', ref: 'op', output: 'out' } },
-          ]},
-        }},
-        { op: 'instanceDecl', name: 'w', program: 'Wrap', inputs: {
-          x: { op: 'select', args: [{ op: 'eq', args: [{ op: 'sampleIndex' }, 10] }, 1, 0] },
-        }},
-      ]},
-      audio_outputs: [{ instance: 'w', output: 'out' }],
-    } as ProgramFile, session)
-    const flat = flattenExpressions(session)
-    let leaks = 0
-    for (const e of flat.outputExprs) leaks += countDelayValueLeaks(e)
-    for (const e of flat.registerExprs) leaks += countDelayValueLeaks(e)
-    expect(leaks).toBe(0)
-  })
-})
-
-describe('flatten bug 2 — wrapping stateful stdlib programs in program_decl', () => {
+describe('flatten regression — wrapping stateful stdlib programs in program_decl', () => {
   test('Wrap(OnePole) matches unwrapped OnePole', () => {
     const impulse = { op: 'select', args: [{ op: 'eq', args: [{ op: 'sampleIndex' }, 10] }, 1, 0] }
 
@@ -107,7 +50,7 @@ describe('flatten bug 2 — wrapping stateful stdlib programs in program_decl', 
         ]},
         audio_outputs: [{ instance: 'w', output: 'out' }],
       } as ProgramFile, session)
-      return interpretSamples(flattenExpressions(session), 30)
+      return interpretSession(session, 30)
     })()
 
     const bare = (() => {
@@ -123,7 +66,7 @@ describe('flatten bug 2 — wrapping stateful stdlib programs in program_decl', 
         ]},
         audio_outputs: [{ instance: 'op', output: 'out' }],
       } as ProgramFile, session)
-      return interpretSamples(flattenExpressions(session), 30)
+      return interpretSession(session, 30)
     })()
 
     for (let i = 0; i < 30; i++) {
@@ -131,7 +74,7 @@ describe('flatten bug 2 — wrapping stateful stdlib programs in program_decl', 
     }
   })
 
-  test('Wrap(LadderFilter) matches unwrapped LadderFilter (no delay_value leaks)', () => {
+  test('Wrap(LadderFilter) matches unwrapped LadderFilter', () => {
     const makeImpulsePatch = (useWrap: boolean): ProgramFile => {
       const impulse = { op: 'select', args: [{ op: 'eq', args: [{ op: 'sampleIndex' }, 10] }, 1, 0] }
       if (useWrap) {
@@ -171,16 +114,10 @@ describe('flatten bug 2 — wrapping stateful stdlib programs in program_decl', 
     }
 
     const sessionW = makeSession(44100); loadStdlib(sessionW); loadJSON(makeImpulsePatch(true), sessionW)
-    const flatW = flattenExpressions(sessionW)
-    let leaks = 0
-    for (const e of flatW.outputExprs) leaks += countDelayValueLeaks(e)
-    for (const e of flatW.registerExprs) leaks += countDelayValueLeaks(e)
-    expect(leaks).toBe(0)
-
-    const wrapped = interpretSamples(flatW, 60)
+    const wrapped = interpretSession(sessionW, 60)
 
     const sessionB = makeSession(44100); loadStdlib(sessionB); loadJSON(makeImpulsePatch(false), sessionB)
-    const bare = interpretSamples(flattenExpressions(sessionB), 60)
+    const bare = interpretSession(sessionB, 60)
 
     for (let i = 0; i < 60; i++) {
       expect(wrapped[i]).toBeCloseTo(bare[i], 10)
@@ -216,7 +153,7 @@ describe('flatten bug 2 — wrapping stateful stdlib programs in program_decl', 
         ]},
         audio_outputs: [{ instance: 'w', output: 'out' }],
       } as ProgramFile, session)
-      return interpretSamples(flattenExpressions(session), 300)
+      return interpretSession(session, 300)
     })()
 
     const bare = (() => {
@@ -232,7 +169,7 @@ describe('flatten bug 2 — wrapping stateful stdlib programs in program_decl', 
         ]},
         audio_outputs: [{ instance: 'b', output: 'out' }],
       } as ProgramFile, session)
-      return interpretSamples(flattenExpressions(session), 300)
+      return interpretSession(session, 300)
     })()
 
     for (let i = 0; i < 300; i++) {

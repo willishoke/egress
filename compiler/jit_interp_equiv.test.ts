@@ -2,8 +2,9 @@
  * jit_interp_equiv.test.ts — Differential test: TS interpreter vs. LLVM JIT.
  *
  * Runs a small gateable-subgraph patch through both the pure-TS interpreter
- * (interpret.ts / interpretSamples) and the native LLVM JIT (apply_plan →
- * Runtime.process), then asserts the output buffers match sample-for-sample.
+ * (interpret_resolved.ts / interpretSession) and the native LLVM JIT
+ * (apply_plan → Runtime.process), then asserts the output buffers match
+ * sample-for-sample.
  *
  * This is the merge gate for the gateable-subgraph feature: if the JIT's
  * conditional-block optimization diverges from the interpreter's reference
@@ -16,8 +17,7 @@ import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON, type ExprNode } from './session'
 import { loadStdlib as loadBuiltins, loadProgramAsType, type ProgramNode } from './program'
 import { applySessionWiring } from './apply_plan'
-import { flattenExpressions } from './flatten'
-import { interpretSamples } from './interpret'
+import { interpretSession } from './interpret_resolved'
 
 // A trivial leaf program: one input, one state register, output = reg; reg updates
 // to (reg + input). Exercises both output and register-update wrapping paths.
@@ -67,11 +67,10 @@ function runJit(session: ReturnType<typeof setupGated>, nFrames = 1): Float64Arr
 }
 
 function runInterp(session: ReturnType<typeof setupGated>, nSamples: number): Float64Array {
-  // applySessionWiring already flattened + loaded the plan; we re-run
-  // flattenExpressions here to get the pre-emission ExprNode trees that
-  // the interpreter consumes.
-  const flat = flattenExpressions(session)
-  return interpretSamples(flat, nSamples)
+  // Independent oracle: re-run the same materialization compileSession
+  // uses, then walk the resolved IR directly. Matches what the JIT sees,
+  // but through a different evaluator.
+  return interpretSession(session, nSamples)
 }
 
 describe('JIT ↔ interpreter equivalence for gateable subgraphs', () => {
@@ -93,8 +92,7 @@ describe('JIT ↔ interpreter equivalence for gateable subgraphs', () => {
     session.graph.primeJit()
     session.graph.process()
     const jit = new Float64Array(session.graph.outputBuffer)
-    const flat = flattenExpressions(session)
-    const interp = interpretSamples(flat, jit.length)
+    const interp = interpretSession(session, jit.length)
 
     for (let i = 0; i < jit.length; i++) {
       expect(jit[i]).toBeCloseTo(interp[i], 10)
@@ -200,8 +198,7 @@ describe('JIT ↔ interpreter equivalence for gateable subgraphs', () => {
     session.graph.primeJit()
     session.graph.process()
     const jit = new Float64Array(session.graph.outputBuffer)
-    const flat = flattenExpressions(session)
-    const interp = interpretSamples(flat, jit.length)
+    const interp = interpretSession(session, jit.length)
 
     for (let i = 0; i < jit.length; i++) {
       expect(jit[i]).toBeCloseTo(interp[i], 10)
@@ -237,8 +234,7 @@ describe('JIT ↔ interpreter equivalence for gateable subgraphs', () => {
     session.graph.primeJit()
     session.graph.process()
     const jit = new Float64Array(session.graph.outputBuffer)
-    const flat = flattenExpressions(session)
-    const interp = interpretSamples(flat, jit.length)
+    const interp = interpretSession(session, jit.length)
 
     for (let i = 0; i < jit.length; i++) {
       expect(jit[i]).toBeCloseTo(interp[i], 8)
@@ -282,8 +278,7 @@ describe('JIT ↔ interpreter equivalence for gateable subgraphs', () => {
     session.graph.primeJit()
     session.graph.process()
     const jit = new Float64Array(session.graph.outputBuffer)
-    const flat = flattenExpressions(session)
-    const interp = interpretSamples(flat, jit.length)
+    const interp = interpretSession(session, jit.length)
 
     for (let i = 0; i < jit.length; i++) {
       expect(jit[i]).toBeCloseTo(interp[i], 10)

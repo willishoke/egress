@@ -1,8 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON } from './session'
 import { loadStdlib } from './program'
-import { flattenExpressions } from './flatten'
-import { interpretSamples } from './interpret'
+import { interpretSession } from './interpret_resolved'
 import { renderFrames } from './test_utils/audio'
 
 describe('stdlib BubbleCloud', () => {
@@ -29,8 +28,7 @@ describe('stdlib BubbleCloud', () => {
       audio_outputs: [{ instance: 'c', output: 'out' }],
     }, session)
 
-    const flat = flattenExpressions(session)
-    const out = interpretSamples(flat, 10000)
+    const out = interpretSession(session, 10000)
 
     let peak = 0
     for (const v of out) peak = Math.max(peak, Math.abs(v))
@@ -76,8 +74,7 @@ describe('stdlib BubbleCloud', () => {
     }
 
     const interpSession = setup()
-    const flat = flattenExpressions(interpSession)
-    const interp = interpretSamples(flat, bufLen * nCalls)
+    const interp = interpretSession(interpSession, bufLen * nCalls)
 
     const jitSession = setup()
     const jit = renderFrames(jitSession.runtime, nCalls)

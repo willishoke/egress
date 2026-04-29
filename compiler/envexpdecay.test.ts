@@ -1,8 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON } from './session'
 import { loadStdlib } from './program'
-import { flattenExpressions } from './flatten'
-import { interpretSamples } from './interpret'
+import { interpretSession } from './interpret_resolved'
 
 describe('stdlib EnvExpDecay', () => {
   test('resets to 1 on trigger and decays exponentially', () => {
@@ -27,8 +26,7 @@ describe('stdlib EnvExpDecay', () => {
       audio_outputs: [{ instance: 'env', output: 'env' }],
     }, session)
 
-    const flat = flattenExpressions(session)
-    const out = interpretSamples(flat, 200)
+    const out = interpretSession(session, 200)
 
     const peak = out[11] * 20.0
     expect(peak).toBeCloseTo(1.0, 3)

@@ -53,6 +53,21 @@ import { specializeProgram } from './specialize.js'
 import { cloneResolvedProgram } from './clone.js'
 
 export function compileSession(session: SessionState): FlatPlan {
+  return compileResolved(materializeSessionToResolvedIR(session))
+}
+
+/**
+ * Run the session-to-ResolvedProgram materialization pipeline end-to-end:
+ * synthesize a top-level program, route gate expressions through strata
+ * for nestedOut inlining, run the strata pipeline, post-strata wrap
+ * gateable lifted decls. Returns the post-strata `ResolvedProgram` ready
+ * for either `compileResolved` (→ tropical_plan_4 for the JIT) or the
+ * pure-TS interpreter (D3 D3-b).
+ *
+ * Shared by `compileSession` and `interpretSession` so both backends see
+ * the exact same IR — the property `jit_interp_equiv` rests on.
+ */
+export function materializeSessionToResolvedIR(session: SessionState): ResolvedProgram {
   const { synthetic, gateableInstances } = materializeSessionWithMeta(session)
 
   // For each gateable instance, append a synthetic outputDecl + outputAssign
@@ -97,7 +112,7 @@ export function compileSession(session: SessionState): FlatPlan {
   }
 
   if (inlinedGates.size > 0) applyGateableWraps(lowered, inlinedGates)
-  return compileResolved(lowered)
+  return lowered
 }
 
 /** Wrap every lifted reg/delay update and output expression whose

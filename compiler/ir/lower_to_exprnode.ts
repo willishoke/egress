@@ -14,7 +14,7 @@ import type {
   ResolvedExpr, ResolvedExprOpNode,
   RegDecl, DelayDecl, InstanceDecl, InputDecl,
 } from './nodes.js'
-import type { ExprNode } from '../expr.js'
+import type { EmitExprNode as ExprNode } from './emit_node.js'
 
 export interface Slots {
   inputs:    Map<InputDecl, number>

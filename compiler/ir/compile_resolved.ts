@@ -23,7 +23,7 @@
  */
 
 import type { ResolvedProgram, ResolvedExpr, OutputDecl, RegDecl, DelayDecl } from './nodes.js'
-import type { ExprNode } from '../expr.js'
+import type { EmitExprNode as ExprNode } from './emit_node.js'
 import type { FlatPlan } from '../flat_plan'
 import { resolvedToSlotted } from './lower_to_exprnode.js'
 import { buildSlotMaps, type SlotMaps } from './slots.js'

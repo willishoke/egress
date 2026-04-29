@@ -39,8 +39,8 @@
 import type {
   ResolvedProgram, ResolvedExpr, ResolvedExprOpNode, ResolvedBlock,
   ResolvedProgramPorts,
-  InputDecl, OutputDecl, ParamDecl, DelayDecl, InstanceDecl,
-  BodyDecl, BodyAssign, OutputAssign,
+  InputDecl, OutputDecl, RegDecl, ParamDecl, DelayDecl, InstanceDecl,
+  BodyDecl, BodyAssign, OutputAssign, NextUpdate,
   TypeParamDecl,
 } from './nodes.js'
 import type { ExprNode } from '../expr.js'
@@ -50,11 +50,148 @@ import { strataPipeline } from './strata.js'
 import { compileResolved } from './compile_resolved.js'
 import type { FlatPlan } from '../flatten.js'
 import { specializeProgram } from './specialize.js'
+import { cloneResolvedProgram } from './clone.js'
 
 export function compileSession(session: SessionState): FlatPlan {
-  const synthetic = materializeSession(session)
+  const { synthetic, gateableInstances } = materializeSessionWithMeta(session)
+
+  // For each gateable instance, append a synthetic outputDecl + outputAssign
+  // carrying its gate expression. This routes the gate expressions through
+  // `strataPipeline` so any `nestedOut` refs to other instances get inlined
+  // alongside the rest. Post-strata, we read the inlined gate back off the
+  // synthetic output, then strip both the output decl and assign before
+  // passing to `compileResolved` so the gate doesn't appear in the plan's
+  // audio outputs.
+  const gateOutputDecls = new Map<string, OutputDecl>()
+  for (const [instName, gate] of gateableInstances) {
+    const gateOutDecl: OutputDecl = { op: 'outputDecl', name: `__gate__${instName}` }
+    synthetic.ports.outputs.push(gateOutDecl)
+    synthetic.body.assigns.push({ op: 'outputAssign', target: gateOutDecl, expr: gate })
+    gateOutputDecls.set(instName, gateOutDecl)
+  }
+
   const lowered = strataPipeline(synthetic)
+
+  // Read back the post-strata inlined gate expressions by name (strata
+  // doesn't rename OutputDecls but it may rebuild the program shell,
+  // breaking object identity — match on the `__gate__` prefix instead).
+  const inlinedGates = new Map<string, ResolvedExpr>()
+  const synthOutputNames = new Set<string>()
+  for (const instName of gateableInstances.keys()) synthOutputNames.add(`__gate__${instName}`)
+  for (const a of lowered.body.assigns) {
+    if (a.op !== 'outputAssign') continue
+    if (!('op' in a.target)) continue
+    if (a.target.op !== 'outputDecl') continue
+    if (!a.target.name.startsWith('__gate__')) continue
+    const instName = a.target.name.slice('__gate__'.length)
+    inlinedGates.set(instName, a.expr)
+  }
+  // Strip the synthetic outputs and assigns before lowering.
+  if (synthOutputNames.size > 0) {
+    lowered.ports.outputs = lowered.ports.outputs.filter(o => !synthOutputNames.has(o.name))
+    lowered.body.assigns = lowered.body.assigns.filter(a => {
+      if (a.op !== 'outputAssign') return true
+      if (!('op' in a.target)) return true
+      return !synthOutputNames.has(a.target.name)
+    })
+  }
+
+  if (inlinedGates.size > 0) applyGateableWraps(lowered, inlinedGates)
   return compileResolved(lowered)
+}
+
+/** Wrap every lifted reg/delay update and output expression whose
+ *  origin is a gateable session instance with `select(gate, expr,
+ *  fallback)`. Identifies origin by the renaming convention
+ *  `${instanceName}_${innerName}` that `inlineInstances:liftClonedBody`
+ *  applies. (This name-prefix convention is the §2.3 backward-compat
+ *  shape; D7 will replace it with a `_liftedFrom` decl-identity tag.) */
+function applyGateableWraps(
+  prog: ResolvedProgram,
+  gateableInstances: ReadonlyMap<string, ResolvedExpr>,
+): void {
+  // Match by exact name OR by `${instName}_` prefix (the renaming
+  // convention `inlineInstances:liftClonedBody` applies to lifted
+  // sub-instance regs/delays). Returning a sentinel `null` for
+  // not-found avoids the `!gate` truthy bug when the gate expression
+  // is the boolean literal `false`.
+  const matchInstance = (declName: string): ResolvedExpr | null => {
+    for (const [instName, gate] of gateableInstances) {
+      if (declName === instName || declName.startsWith(`${instName}_`)) return gate
+    }
+    return null
+  }
+
+  // Skip an expression that was already wrapped pre-strata (the
+  // gateable instance's OWN decls had `select(gate, raw, fallback)`
+  // applied by `wrapTypeOutputsPreStrata` and strata's input
+  // substitution embedded the same `gate` object identity).
+  const alreadyWrapped = (expr: ResolvedExpr, gate: ResolvedExpr): boolean => {
+    return typeof expr === 'object' && expr !== null && !Array.isArray(expr)
+      && expr.op === 'select' && expr.args[0] === gate
+  }
+
+  // Wrap nextUpdate assigns whose target reg/delay was lifted from a
+  // gateable instance and isn't already wrapped (sub-instance decls
+  // didn't exist pre-strata).
+  for (const a of prog.body.assigns) {
+    if (a.op !== 'nextUpdate') continue
+    const gate = matchInstance(a.target.name)
+    if (gate === null) continue
+    if (alreadyWrapped(a.expr, gate)) continue
+    const fallback: ResolvedExpr = a.target.op === 'regDecl'
+      ? { op: 'regRef', decl: a.target as RegDecl }
+      : { op: 'delayRef', decl: a.target as DelayDecl }
+    a.expr = { op: 'select', args: [gate, a.expr, fallback] }
+  }
+
+  // Wrap delay decls' decl.update field for delays without a parallel
+  // nextUpdate. Same skip-if-already-wrapped logic.
+  for (const d of prog.body.decls) {
+    if (d.op !== 'delayDecl') continue
+    const gate = matchInstance(d.name)
+    if (gate === null) continue
+    const haveNextUpdate = prog.body.assigns.some(
+      a => a.op === 'nextUpdate' && a.target === d,
+    )
+    if (haveNextUpdate) continue
+    if (alreadyWrapped(d.update, gate)) continue
+    const fallback: ResolvedExpr = { op: 'delayRef', decl: d }
+    d.update = { op: 'select', args: [gate, d.update, fallback] }
+  }
+
+  // dac-target outputAssigns from gateable instances are ALREADY
+  // wrapped: pre-strata, the gateable type's outputAssigns got
+  // `select(__gate__, raw, 0)` applied. Strata's nestedOut substitution
+  // carried that wrapped form into wherever a1.out was referenced —
+  // including the synthetic dac.out outputAssign (which is just
+  // `nestedOut(a1, out)` syntactically, replaced inline). So no
+  // additional output wrapping is needed here. The wraps composed by
+  // strata also flow into other gateable instances' gate expressions
+  // (so `a2`'s gate `a1.out > 1.5` reads the wrapped a1.out, matching
+  // legacy `flatten.ts:wrapOutput` semantics).
+}
+
+interface MaterializeResult {
+  synthetic: ResolvedProgram
+  gateableInstances: Map<string, ResolvedExpr>
+}
+
+function materializeSessionWithMeta(session: SessionState): MaterializeResult {
+  const ctx = makeContext(session)
+  const synthetic = materializeSessionInner(session, ctx)
+  return { synthetic, gateableInstances: ctx.gateableInstances }
+}
+
+function makeContext(session: SessionState): MaterializeContext {
+  return {
+    instanceDecls:       new Map(),
+    paramDecls:          new Map(),
+    syntheticDelayDecls: [],
+    exprMemo:            new WeakMap(),
+    gateableInstances:   new Map(),
+    session,
+  }
 }
 
 /** Test-only export: expose the synthetic top-level builder so equiv
@@ -81,18 +218,21 @@ interface MaterializeContext {
    *  ResolvedExpr objects so downstream CSE memo (in resolvedToSlotted +
    *  emit_numeric) treats them as identical. */
   exprMemo: WeakMap<object, ResolvedExpr>
+  /** For each gateable session instance, the resolved gate expression to
+   *  apply post-strata. Wrapping happens after `inlineInstances` has
+   *  lifted all sub-instance regs/delays into the synthetic top-level,
+   *  so every register in the gateable lineage gets wrapped. The legacy
+   *  `flatten.ts` wraps at the flat-register level for the same reason. */
+  gateableInstances: Map<string, ResolvedExpr>
   /** Direct lookup into the session for type-resolution + port lookup. */
   session: SessionState
 }
 
 function materializeSession(session: SessionState): ResolvedProgram {
-  const ctx: MaterializeContext = {
-    instanceDecls:       new Map(),
-    paramDecls:          new Map(),
-    syntheticDelayDecls: [],
-    exprMemo:            new WeakMap(),
-    session,
-  }
+  return materializeSessionInner(session, makeContext(session))
+}
+
+function materializeSessionInner(session: SessionState, ctx: MaterializeContext): ResolvedProgram {
 
   // 1. Build InstanceDecl per session instance, in iteration order.
   //    Each instance's `type` is resolved via the session's resolved
@@ -241,13 +381,75 @@ function buildInstanceDecl(
   // empty-typeParams + empty-typeArgs path. Carrying typeArgsList through
   // would re-trigger specializeProgram against an already-specialized
   // template, which throws "type-arg X is not a declared type-param".
-  return {
+  const decl: InstanceDecl = {
     op: 'instanceDecl',
     name,
     type: resolvedType,
     typeArgs: [],
     inputs: [],
   }
+
+  // Gateable: two-phase wrap.
+  //
+  // PRE-STRATA: wrap the type's outputAssigns + own regDecl/delayDecl
+  // updates with `select(__gate__, raw, fallback)`. This is necessary
+  // for *outputs* because strata's nestedOut substitution captures the
+  // gateable instance's output expression at inline time — if we wrap
+  // post-strata, other instances' wiring/gates that reference this
+  // gateable's output have already captured the *un*wrapped form.
+  //
+  // POST-STRATA: wrap any decls lifted from sub-instances of this
+  // gateable instance (matched by name prefix `${name}_`). These
+  // didn't exist pre-strata.
+  //
+  // The gate is plumbed in as a synthetic `__gate__` input on the
+  // cloned type so cloning doesn't have to handle outer-scope refs in
+  // an embedded gate expression.
+  if (inst.gateable) {
+    if (inst.gateInput === undefined) {
+      throw new Error(
+        `compileSession: instance '${name}' is gateable but has no gateInput.`,
+      )
+    }
+    const gateExpr = translateExpr(inst.gateInput, ctx)
+    ctx.gateableInstances.set(name, gateExpr)
+    wrapTypeOutputsPreStrata(decl, gateExpr)
+  }
+
+  return decl
+}
+
+/** Pre-strata wrap of a gateable instance's TYPE outputs and own
+ *  reg/delay updates via a synthetic `__gate__` input. */
+function wrapTypeOutputsPreStrata(decl: InstanceDecl, gateExpr: ResolvedExpr): void {
+  const cloned = cloneResolvedProgram(decl.type)
+  const gateInputDecl: InputDecl = { op: 'inputDecl', name: '__gate__' }
+  cloned.ports.inputs.push(gateInputDecl)
+
+  const gateRef: ResolvedExpr = { op: 'inputRef', decl: gateInputDecl }
+
+  for (const a of cloned.body.assigns) {
+    if (a.op === 'outputAssign') {
+      a.expr = { op: 'select', args: [gateRef, a.expr, 0] }
+    } else if (a.op === 'nextUpdate') {
+      const fallback: ResolvedExpr = a.target.op === 'regDecl'
+        ? { op: 'regRef', decl: a.target as RegDecl }
+        : { op: 'delayRef', decl: a.target as DelayDecl }
+      a.expr = { op: 'select', args: [gateRef, a.expr, fallback] }
+    }
+  }
+  for (const d of cloned.body.decls) {
+    if (d.op !== 'delayDecl') continue
+    const haveNextUpdate = cloned.body.assigns.some(
+      a => a.op === 'nextUpdate' && a.target === d,
+    )
+    if (haveNextUpdate) continue
+    const fallback: ResolvedExpr = { op: 'delayRef', decl: d }
+    d.update = { op: 'select', args: [gateRef, d.update, fallback] }
+  }
+
+  decl.type = cloned
+  decl.inputs.push({ port: gateInputDecl, value: gateExpr })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

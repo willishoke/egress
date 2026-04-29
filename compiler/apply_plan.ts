@@ -1,25 +1,25 @@
 /**
  * apply_plan.ts — Apply the compilation pipeline to a live session.
  *
- * Flattens the session's program graph and pushes to a FlatRuntime.
- * All expression trees are inlined in TS and sent as a single flat plan.
+ * Flow: SessionState → compileSession() → tropical_plan_4 JSON → runtime.loadPlan()
  *
- * Flow: SessionState → flattenSession() → tropical_plan_2 JSON → runtime.loadPlan()
+ * As of Phase D D2, the resolved-IR pipeline (`compile_session.ts`) is
+ * the production runtime path. The legacy `flatten.ts` survives until
+ * D3 deletes it; until then, callers that want the legacy plan can
+ * still call `flattenSession` directly.
  */
 
 import type { SessionState } from './session'
-import { flattenSession } from './flatten'
+import { compileSession } from './ir/compile_session'
 import type { Runtime } from './runtime/runtime'
 
 /**
- * Flatten the session's program graph and push to a FlatRuntime.
- *
- * Call this after any mutation to inputExprNodes or graphOutputs.
- * All expression trees are inlined in TS and sent as a single flat plan —
- * no Graph/Module boundaries, just one kernel.
+ * Compile the session's program graph through the resolved-IR pipeline
+ * and push to a FlatRuntime. Call this after any mutation to
+ * `inputExprNodes` or `graphOutputs`.
  */
 export function applyFlatPlan(session: SessionState, runtime: Runtime): void {
-  const plan = flattenSession(session)
+  const plan = compileSession(session)
   const json = JSON.stringify(plan)
   runtime.loadPlan(json)
 }

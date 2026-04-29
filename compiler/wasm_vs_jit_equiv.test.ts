@@ -89,8 +89,8 @@ function makeOnePolePlan(cutoff: number): FlatPlan {
       body: { op: 'block', decls: [
         { op: 'instanceDecl', name: 'osc', program: 'SinOsc', inputs: { freq: 220 } },
         { op: 'instanceDecl', name: 'lp', program: 'OnePole', inputs: {
-          signal: { op: 'ref', instance: 'osc', output: 'sine' },
-          cutoff,
+          input: { op: 'ref', instance: 'osc', output: 'sine' },
+          g: cutoff,
         }},
       ]},
       audio_outputs: [{ instance: 'lp', output: 'out' }],

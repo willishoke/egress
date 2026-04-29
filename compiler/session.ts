@@ -23,6 +23,7 @@ import {
   Float, Int, Bool, Unit, ArrayType, StructType, SumType,
 } from './term.js'
 import { compileResolvedToProgramDef } from './ir/strata.js'
+import { normalizeOpTags } from './parse/normalize_ops.js'
 import type { TypeParamDecl } from './ir/nodes.js'
 
 // ─────────────────────────────────────────────────────────────
@@ -323,6 +324,9 @@ export function normalizeProgramFile(
   if (raw.schema !== 'tropical_program_2') {
     throw new Error(`Unknown schema '${raw.schema}'. Expected 'tropical_program_2'.`)
   }
+  // Pre-Phase-A patches use snake_case decl/assign op tags. Normalize once at
+  // the JSON ingest boundary so the rest of the pipeline only sees camelCase.
+  normalizeOpTags(raw)
   const v2 = parseProgramV2(raw) as Record<string, unknown> & {
     schema: 'tropical_program_2'
     params?: ProgramTopLevel['params']

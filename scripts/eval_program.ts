@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs'
 import { makeSession, loadJSON } from '../compiler/session.js'
 import { loadStdlib }           from '../compiler/program.js'
-import { flattenSession }         from '../compiler/flat_plan.js'
+import { compileSession }       from '../compiler/ir/compile_session.js'
 import type { FlatPlan }        from '../compiler/flat_plan.js'
 import type { NOperand }        from '../compiler/emit_numeric.js'
 
@@ -30,7 +30,7 @@ if (!patchPath) {
 const session = makeSession()
 loadStdlib(session)
 loadJSON(JSON.parse(readFileSync(patchPath, 'utf-8')), session)
-const plan: FlatPlan = flattenSession(session)
+const plan: FlatPlan = compileSession(session)
 
 console.log(`Compiled: ${plan.instructions.length} instrs, ` +
             `${plan.state_init.length} state regs, ` +

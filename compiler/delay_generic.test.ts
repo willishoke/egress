@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON, resolveProgramType } from './session'
 import { loadStdlib } from './program'
-import { flattenSession } from './flatten'
+import { compileSession } from './ir/compile_session'
 import { Float, ArrayType } from './term'
 
 describe('stdlib Delay<N>', () => {
@@ -35,7 +35,7 @@ describe('stdlib Delay<N>', () => {
       ]},
       audio_outputs: [{ instance: 'd', output: 'y' }],
     }, session)
-    const plan = flattenSession(session)
+    const plan = compileSession(session)
     expect(plan).toBeDefined()
     const inst = session.instanceRegistry.get('d')!
     expect(inst.typeName).toBe('Delay')

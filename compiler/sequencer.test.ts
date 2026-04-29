@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'bun:test'
 import { makeSession, loadJSON, resolveProgramType } from './session'
 import { loadStdlib } from './program'
-import { flattenSession } from './flatten'
+import { compileSession } from './ir/compile_session'
 import { Float, Int, ArrayType, portTypeEqual } from './term'
 
 describe('stdlib Sequencer<N>', () => {
@@ -39,7 +39,7 @@ describe('stdlib Sequencer<N>', () => {
       ]},
       audio_outputs: [{ instance: 'seq', output: 'value' }],
     }, session)
-    const plan = flattenSession(session)
+    const plan = compileSession(session)
     expect(plan).toBeDefined()
     const inst = session.instanceRegistry.get('seq')!
     expect(inst.typeName).toBe('Sequencer')

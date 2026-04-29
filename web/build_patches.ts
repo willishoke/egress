@@ -13,7 +13,7 @@ import { dirname, resolve, join } from 'path'
 import { fileURLToPath } from 'url'
 import { makeSession, loadJSON } from '../compiler/session.js'
 import { loadStdlib } from '../compiler/program.js'
-import { flattenSession } from '../compiler/flatten.js'
+import { compileSession } from '../compiler/ir/compile_session.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distDir = resolve(__dirname, 'dist/patches')
@@ -123,7 +123,7 @@ for (const patch of PATCHES) {
     const session = makeSession(1024)
     loadStdlib(session)
     loadJSON(patch.program as { schema: string; [k: string]: unknown }, session)
-    const plan = flattenSession(session)
+    const plan = compileSession(session)
     const out = JSON.stringify(plan)
     const outPath = join(distDir, `${patch.slug}.plan.json`)
     writeFileSync(outPath, out, 'utf-8')

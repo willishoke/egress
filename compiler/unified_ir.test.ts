@@ -1,7 +1,13 @@
 /**
- * Golden FlatPlan round-trip: every frozen fixture must reproduce byte-for-byte
- * when its tropical_program_2 input is loaded into a session and re-flattened.
- * Protects the compile pipeline from silent regressions.
+ * Golden FlatPlan round-trip: every frozen fixture must reproduce
+ * byte-for-byte when its `tropical_program_2` input is loaded into a
+ * session and re-compiled through `compileSession`. Protects the
+ * resolved-IR pipeline from silent regressions.
+ *
+ * Audio equivalence between the legacy `flattenSession` and the
+ * post-cutover `compileSession` is gated separately by
+ * `compile_session_equiv.test.ts`; this file pins the
+ * `tropical_plan_4` shape directly.
  */
 
 import { describe, test, expect } from 'bun:test'
@@ -11,7 +17,7 @@ import { fileURLToPath } from 'node:url'
 
 import { makeSession, loadJSON } from './session.js'
 import { loadStdlib } from './program.js'
-import { flattenSession } from './flatten.js'
+import { compileSession } from './ir/compile_session'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const FIXTURE_DIR = join(__dirname, '__fixtures__/flat_plan')
@@ -20,11 +26,7 @@ const fixtures = readdirSync(FIXTURE_DIR)
   .filter(f => f.endsWith('.json'))
   .sort()
 
-/** Goldens anchor what the strata pipeline emits. The legacy path was
- *  deleted in Phase C9 — there is only one pipeline now. Four fixtures
- *  (stdlib_delay, stdlib_ladder, stdlib_phaser, stdlib_sequencer) use
- *  instances and would have produced a different slot layout under the
- *  pre-C8 legacy path; the goldens here reflect the strata layout. */
+/** Goldens anchor what `compileSession` emits. */
 
 describe('FlatPlan golden fixtures', () => {
   for (const file of fixtures) {
@@ -36,7 +38,7 @@ describe('FlatPlan golden fixtures', () => {
       const session = makeSession()
       loadStdlib(session)
       loadJSON(input, session)
-      const plan = flattenSession(session)
+      const plan = compileSession(session)
 
       expect(JSON.stringify(plan)).toBe(JSON.stringify(expected_plan))
     })

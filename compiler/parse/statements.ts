@@ -19,7 +19,7 @@
  *
  * Out of scope (later sub-phases):
  *  - Nested `program` decls (B4)
- *  - Full port-type grammar with bounds, arrays, generics (B4)
+ *  - Full port-type grammar with arrays, generics (B4)
  *  - Type args on instance decls beyond simple `<N=4>` form (B4)
  *  - ADTs / match (B5)
  */

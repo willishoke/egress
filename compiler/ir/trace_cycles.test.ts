@@ -47,15 +47,15 @@ function delayDecls(prog: ResolvedProgram): DelayDecl[] {
 
 describe('traceCycles — identity cases', () => {
   test('a program with no instances returns input by identity', () => {
-    const p = elab('program X(a: signal) -> (out: signal) { out = a + 1 }')
+    const p = elab('program X(a: float) -> (out: float) { out = a + 1 }')
     expect(traceCycles(p)).toBe(p)
   })
 
   test('acyclic two-instance graph returns input by identity', () => {
     // a → b: b reads from a's output, a reads only from external input.
     const p = elab(`
-      program Top(x: signal) -> (out: signal) {
-        program Inner(in_: signal) -> (out_: signal) { out_ = in_ + 1 }
+      program Top(x: float) -> (out: float) {
+        program Inner(in_: float) -> (out_: float) { out_ = in_ + 1 }
         a = Inner(in_: x)
         b = Inner(in_: a.out_)
         out = b.out_
@@ -73,8 +73,8 @@ describe('traceCycles — two-instance cycle', () => {
   test('inserts a synthetic delay; later member reads it instead of NestedOut', () => {
     // a reads b.out, b reads a.out — a 2-cycle.
     const p = elab(`
-      program Top() -> (out: signal) {
-        program Inner(in_: signal) -> (out_: signal) { out_ = in_ + 1 }
+      program Top() -> (out: float) {
+        program Inner(in_: float) -> (out_: float) { out_ = in_ + 1 }
         a = Inner(in_: b.out_)
         b = Inner(in_: a.out_)
         out = b.out_
@@ -119,8 +119,8 @@ describe('traceCycles — two-instance cycle', () => {
 describe('traceCycles — three-instance cycle', () => {
   test('a → b → c → a: a single back-edge is broken', () => {
     const p = elab(`
-      program Top() -> (out: signal) {
-        program Inner(in_: signal) -> (out_: signal) { out_ = in_ + 1 }
+      program Top() -> (out: float) {
+        program Inner(in_: float) -> (out_: float) { out_ = in_ + 1 }
         a = Inner(in_: c.out_)
         b = Inner(in_: a.out_)
         c = Inner(in_: b.out_)

@@ -13,8 +13,8 @@
  *     name: string,
  *     type_params?: { N: { type: 'int', default?: number }, ... },
  *     ports?: {
- *       inputs?:  Array<string | { name, type?, default?, bounds? }>,
- *       outputs?: Array<string | { name, type?, bounds? }>,
+ *       inputs?:  Array<string | { name, type?, default? }>,
+ *       outputs?: Array<string | { name, type? }>,
  *     },
  *     body: BlockNode,
  *   }
@@ -28,9 +28,7 @@
  *    array form `Element[Shape...]` where each shape dim is a number
  *    literal or an identifier (resolved as `typeParam` at parse time
  *    since the parser tracks declared type-param names from the header)
- *  - Bounds: `in [lo, hi]` after a port type
- *  - Input ports: `name: type [= default] [in [lo, hi]]`; outputs omit
- *    the default
+ *  - Input ports: `name: type [= default]`; outputs omit the default
  *  - Bare-name ports (just `name`) emit a string entry
  *  - Nested `program` decls in body, recursive
  *
@@ -41,6 +39,7 @@ import { tokenize, type Tok } from './lexer.js'
 import { parseExprFromTokens } from './expressions.js'
 import { parseBodyFromTokens, type BodyOptions } from './statements.js'
 import { commaList, consume, eat, formatTok, isContextualKw, peek, ParseError, type Cursor } from './shared.js'
+import { lowerBoundsToClamps } from './lower_bounds.js'
 import type {
   ExprNode, ProgramNode, ProgramPort, ProgramPortSpec, ProgramPorts,
   PortTypeDecl, ShapeDim, ScalarKind,
@@ -69,7 +68,10 @@ interface Ctx extends Cursor {}
 // Public entry points
 // ─────────────────────────────────────────────────────────────
 
-/** Parse a top-level program declaration from source text. */
+/** Parse a top-level program declaration from source text. Bound
+ *  annotations (`in [lo, hi]`) are desugared to explicit `clamp`/`select`
+ *  ops by `lowerBoundsToClamps` here, so callers never observe a `bounds`
+ *  field on the returned AST. */
 export function parseProgram(src: string): ProgramNode {
   const toks = tokenize(src)
   const ctx: Ctx = { toks, i: 0 }
@@ -78,12 +80,14 @@ export function parseProgram(src: string): ProgramNode {
   if (trailing.kind !== 'eof') {
     throw new ParseError(`unexpected trailing input after program: ${formatTok(trailing)}`, trailing)
   }
-  return node
+  return lowerBoundsToClamps(node)
 }
 
 /** Parse a program declaration starting at the given token index. Used by
  *  the body parser via the BodyOptions.programDeclParser callback for
- *  nested program decls. */
+ *  nested program decls. The outer `parseProgram` runs `lowerBoundsToClamps`
+ *  on the full tree at the end; nested calls do not — the outer pass
+ *  recurses into nested programs. */
 export function parseProgramFromTokens(
   toks: Tok[], startIdx: number,
 ): { node: ProgramNode; nextIdx: number } {
@@ -267,15 +271,13 @@ function parseSumVariant(ctx: Ctx, enumName: string): SumVariant {
   return { name: variantName, payload }
 }
 
-/** type AliasName = baseScalar in [lo, hi] */
+/** type AliasName = baseScalar */
 function parseAliasDecl(ctx: Ctx): AliasTypeDef {
   consume(ctx, 'type', 'type keyword')
   const name = consume(ctx, 'ident', 'alias name').value as string
   consume(ctx, '=', `\`=\` after alias '${name}'`)
   const baseTok = consume(ctx, 'ident', `base type for alias '${name}'`)
-  consume(ctx, 'in', `\`in\` after base type for alias '${name}'`)
-  const bounds = parseBounds(ctx)
-  return { kind: 'alias', name, base: nameRef(baseTok.value as string), bounds }
+  return { kind: 'alias', name, base: nameRef(baseTok.value as string) }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -327,7 +329,13 @@ function parsePortList(ctx: Ctx, allowDefault: boolean): ProgramPort[] {
  *    name: type in [lo, hi]
  *    name: type = default in [lo, hi]
  *  Outputs accept the same forms minus `= default`.
- *  When the spec has only a name (no type, default, or bounds), emits the
+ *
+ *  Bounds (`in [lo, hi]`) are syntactic sugar — the parser stores them on
+ *  the `ProgramPortSpec` and `lowerBoundsToClamps` rewrites them into
+ *  explicit `clamp` ops at output assigns and input defaults. By the time
+ *  the IR exits the parser, no `bounds` field remains.
+ *
+ *  When the spec has only a name (no type, default, bounds), emits the
  *  bare-string form to match stdlib JSON convention. The untyped-with-
  *  default form preserves legacy stdlib programs (e.g. BitCrusher,
  *  LadderFilter) whose port specs declare a default but no type. */
@@ -368,6 +376,37 @@ function parsePortSpec(ctx: Ctx, allowDefault: boolean): ProgramPort {
   return spec
 }
 
+/** Parse `[lo, hi]` after `in`. Each side may be `null` (sentinel) to
+ *  indicate "no bound on this side", or a number literal (signed). */
+function parseBounds(ctx: Ctx): [number | null, number | null] {
+  consume(ctx, '[', '`[` opening bounds')
+  const lo = parseBound(ctx)
+  consume(ctx, ',', '`,` between bound lo/hi')
+  const hi = parseBound(ctx)
+  consume(ctx, ']', '`]` closing bounds')
+  return [lo, hi]
+}
+
+/** Parse a single bound: `null` sentinel, or a signed numeric literal.
+ *  Direct lexer handling — no need to detour through the expression
+ *  parser (which would only constant-fold `neg(<num>)` into a negative
+ *  number anyway). The grammar is just `'-'? num | 'null'`. */
+function parseBound(ctx: Ctx): number | null {
+  const t = peek(ctx)
+  if (isContextualKw(t, 'null')) {
+    ctx.i++
+    return null
+  }
+  let sign = 1
+  if (eat(ctx, '-')) sign = -1
+  const numTok = peek(ctx)
+  if (numTok.kind !== 'num') {
+    throw new ParseError(`bound must be a number literal or 'null', got ${formatTok(t)}`, t)
+  }
+  ctx.i++
+  return sign * (numTok.value as number)
+}
+
 /** Parse a port type:
  *    Identifier                — bare scalar (e.g. `signal`, `float`, `freq`)
  *    Identifier[Dim, ...]      — array with shape dims (numeric or NameRefNode)
@@ -406,37 +445,6 @@ function parseShapeDim(ctx: Ctx): ShapeDim {
     return nameRef(t.value as string)
   }
   throw new ParseError(`expected number or identifier in array shape, got ${formatTok(t)}`, t)
-}
-
-/** Parse `[lo, hi]` after `in`. Each side may be `null` (sentinel) to
- *  indicate "no bound on this side", or a number literal (signed). */
-function parseBounds(ctx: Ctx): [number | null, number | null] {
-  consume(ctx, '[', '`[` opening bounds')
-  const lo = parseBound(ctx)
-  consume(ctx, ',', '`,` between bound lo/hi')
-  const hi = parseBound(ctx)
-  consume(ctx, ']', '`]` closing bounds')
-  return [lo, hi]
-}
-
-/** Parse a single bound: `null` sentinel, or a signed numeric literal.
- *  Direct lexer handling — no need to detour through the expression
- *  parser (which would only constant-fold `neg(<num>)` into a negative
- *  number anyway). The grammar is just `'-'? num | 'null'`. */
-function parseBound(ctx: Ctx): number | null {
-  const t = peek(ctx)
-  if (isContextualKw(t, 'null')) {
-    ctx.i++
-    return null
-  }
-  let sign = 1
-  if (eat(ctx, '-')) sign = -1
-  const numTok = peek(ctx)
-  if (numTok.kind !== 'num') {
-    throw new ParseError(`bound must be a number literal or 'null', got ${formatTok(t)}`, t)
-  }
-  ctx.i++
-  return sign * (numTok.value as number)
 }
 
 // ─────────────────────────────────────────────────────────────

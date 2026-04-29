@@ -124,7 +124,7 @@ describe('exportSessionAsProgram — port type round-trip', () => {
     if (dstPt?.tag === 'array') expect(dstPt.shape).toEqual([4])
   })
 
-  test('emits bare string names when no type or bounds are declared', () => {
+  test('emits bare string names when no type is declared', () => {
     const session = makeSession(256)
     const plain: ProgramNode = {
       op: 'program',

@@ -145,14 +145,7 @@ function printPortSpec(spec: ProgramPort, allowDefault: boolean): string {
   if (allowDefault && spec.default !== undefined) {
     out += ` = ${printExprAt(spec.default, PREC_LOWEST)}`
   }
-  if (spec.bounds !== undefined) {
-    out += ` in [${printBound(spec.bounds[0])}, ${printBound(spec.bounds[1])}]`
-  }
   return out
-}
-
-function printBound(b: number | null): string {
-  return b === null ? 'null' : String(b)
 }
 
 function printPortType(pt: PortTypeDecl): string {
@@ -447,7 +440,7 @@ function printSumVariant(v: SumVariant): string {
 }
 
 function printAliasTypeDef(td: AliasTypeDef): string {
-  return `type ${td.name} = ${td.base.name} in [${printBound(td.bounds[0])}, ${printBound(td.bounds[1])}]`
+  return `type ${td.name} = ${td.base.name}`
 }
 
 // ─────────────────────────────────────────────────────────────

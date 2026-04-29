@@ -73,7 +73,7 @@ describe('parser uniformity — references are NameRefNode, identities are strin
       program Synth<N: int = 4>(freq: freq = 220, x: float[N]) -> (out: signal) {
         struct Pair { a: float, b: float }
         enum Mode { Sine, Saw(phase: float) }
-        type Bipolar = float in [-1, 1]
+        type Bipolar = float
 
         program Inner<M: int = 8>(sig: signal) -> (out: signal) { out = sig }
 

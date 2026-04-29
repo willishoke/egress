@@ -55,13 +55,13 @@ function findOps(prog: ResolvedProgram, targets: string[]): string[] {
 
 describe('sumLower — no-op when no sums are used', () => {
   test('a sum-free program returns input by identity', () => {
-    const p = elab('program X(a: signal) -> (out: signal) { out = a + 1 }')
+    const p = elab('program X(a: float) -> (out: float) { out = a + 1 }')
     expect(sumLower(p)).toBe(p)
   })
 
   test('a program declaring (but not using) a sum type returns input by identity', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         enum E { A, B }
         out = a
       }
@@ -114,7 +114,7 @@ describe('sumLower — nullary-only enum', () => {
 describe('sumLower — payload variant', () => {
   test('decomposes Idle|Decaying(level) into 2 scalar slots and rewrites bindings', () => {
     const p = elab(`
-      program EnvLite(trigger: signal = 0, decay: float = 0.999) -> (env: signal) {
+      program EnvLite(trigger: float = 0, decay: float = 0.999) -> (env: float) {
         enum Env { Idle, Decaying(level: float) }
         delay state: Env = match state {
           Idle => select(trigger > 0.5, Decaying { level: 1 }, Idle { }),

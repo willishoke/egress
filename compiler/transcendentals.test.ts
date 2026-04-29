@@ -14,7 +14,7 @@ import { describe, test, expect } from 'bun:test'
 import { loadStdlib } from './program'
 import { flattenExpressions } from './flatten'
 import { evalExpr, type InterpretEnv } from './interpret'
-import type { ProgramType, ProgramInstance, Bounds } from './program_types'
+import type { ProgramType, ProgramInstance } from './program_types'
 import type { ExprNode } from './expr'
 import type { SessionState } from './session'
 import { Param, Trigger } from './runtime/param'
@@ -24,7 +24,7 @@ import { Param, Trigger } from './runtime/param'
 // ─────────────────────────────────────────────────────────────
 
 const typeRegistry = new Map<string, ProgramType>()
-const typeAliasRegistry = new Map<string, { base: string; bounds: Bounds }>()
+const typeAliasRegistry = new Map<string, { base: string }>()
 loadStdlib({
   typeRegistry,
   typeAliasRegistry,

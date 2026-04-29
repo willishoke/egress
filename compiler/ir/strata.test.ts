@@ -42,7 +42,7 @@ function findOps(root: unknown, targets: string[]): string[] {
   return out
 }
 
-const TRIVIAL = 'program X(a: signal) -> (out: signal) { reg s: float = 0  out = s + a  next s = a }'
+const TRIVIAL = 'program X(a: float) -> (out: float) { reg s: float = 0  out = s + a  next s = a }'
 
 describe('strata — pass-through on trivial programs', () => {
   test('specialize: empty type-args returns input unchanged', () => {
@@ -91,7 +91,7 @@ describe('strata — throws on unsupported features', () => {
     // A sum type that isn't used by any delay/match/tag is an identity
     // for sumLower: nothing to decompose, no expressions to rewrite.
     const p = elab(`
-      program X(t: signal) -> (out: signal) {
+      program X(t: float) -> (out: float) {
         enum S { A, B }
         out = 0
       }
@@ -122,7 +122,7 @@ describe('strata — throws on unsupported features', () => {
     // Post-C6: arrayLower unrolls the let into the body, no `let` op
     // and no `bindingRef` remain.
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         out = let { y: a + 1 } in y * 2
       }
     `)
@@ -136,7 +136,7 @@ describe('strata — throws on unsupported features', () => {
     // consumed by the fold during unrolling — the resulting body is
     // a chain of `add` ops over numeric literals.
     const p = elab(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         out = fold([1.0, 2.0, 3.0], 0, (a, c) => a + c)
       }
     `)
@@ -149,8 +149,8 @@ describe('strata — throws on unsupported features', () => {
     // and removes the InstanceDecl. The previously-skip path now
     // exercises the inliner end-to-end on a one-deep program.
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Inner(x: signal) -> (y: signal) { y = x + 1 }
+      program X(a: float) -> (out: float) {
+        program Inner(x: float) -> (y: float) { y = x + 1 }
         inst = Inner(x: a)
         out = inst.y
       }

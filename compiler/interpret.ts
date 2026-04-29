@@ -1,14 +1,20 @@
 /**
  * interpret.ts — ExprNode tree interpreter for differential testing.
  *
- * Recursively evaluates post-flatten, post-lower ExprNode trees using
- * JavaScript Math.* for transcendentals. Serves as a reference oracle
- * against the LLVM JIT path.
+ * **Target semantics**: walks post-flatten, post-arrayLower `ExprNode` trees
+ * — the same shape `emit_numeric.ts` consumes when producing `tropical_plan_4`.
+ * The interpreter and the LLVM JIT are independent oracles consuming the
+ * same pre-emit IR; `jit_interp_equiv.test.ts` asserts they agree to within
+ * floating-point tolerance.
  *
- * The interpreter handles the ~40 ops that survive array lowering and
- * combinator expansion. It does NOT handle higher-level ops like
- * generate, fold, let, zeros, reshape — those are expanded by
- * lowerArrayOps before the interpreter sees them.
+ * **Op coverage**: the ~40 ops that survive array lowering and combinator
+ * expansion (post-`lower_arrays.ts`). Does NOT handle higher-level ops like
+ * `generate`, `fold`, `let`, `zeros`, `reshape` — those are expanded before
+ * the interpreter sees them. An unsupported op throws.
+ *
+ * **Phase D plan**: D3 retargets this file to walk `ResolvedExpr` (post-
+ * arrayLower, pre-emit) instead of `ExprNode`, preserving the independent-
+ * oracle property after `flatten.ts` is deleted.
  *
  * No FFI, no C++ dependency. Pure TS, fully deterministic.
  */
@@ -111,7 +117,6 @@ export function evalExpr(node: ExprNode, env: InterpretEnv): Value {
     case 'div':       return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => b !== 0 ? a / b : 0)
     case 'mod':       return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => b !== 0 ? a % b : 0)
     case 'ldexp':     return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => a * Math.pow(2, Math.trunc(b)))
-    case 'floorDiv':
     case 'floorDiv':  return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => b !== 0 ? Math.floor(a / b) : 0)
 
     // ── Binary comparison ─────────────────────────────────
@@ -123,11 +128,8 @@ export function evalExpr(node: ExprNode, env: InterpretEnv): Value {
     case 'neq': return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => a !== b)
 
     // ── Binary bitwise ────────────────────────────────────
-    case 'bitAnd':
     case 'bitAnd':  return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => toInt(a) & toInt(b))
-    case 'bitOr':
     case 'bitOr':   return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => toInt(a) | toInt(b))
-    case 'bitXor':
     case 'bitXor':  return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => toInt(a) ^ toInt(b))
     case 'lshift':  return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => toInt(a) << toInt(b))
     case 'rshift':  return binOp(evalExpr(args![0], env), evalExpr(args![1], env), (a, b) => toInt(a) >> toInt(b))

@@ -45,43 +45,45 @@ describe('declarations — port specs', () => {
     expect(p.ports?.outputs).toEqual(['out'])
   })
 
-  test('input with type and default', () => {
+  test('input with type and default (no implicit bounds)', () => {
+    // `float` carries no built-in alias bounds, so the default passes
+    // through untransformed.
     const p = parseProgram(`
-      program X(freq: freq = 220) -> (out: signal) { out = 0 }
+      program X(freq: float = 220) -> (out: float) { out = 0 }
     `)
-    expect(p.ports?.inputs).toEqual([{ name: 'freq', type: nameRef('freq'), default: 220 }])
+    expect(p.ports?.inputs).toEqual([{ name: 'freq', type: nameRef('float'), default: 220 }])
   })
 
-  test('input with bounds', () => {
+  test('built-in alias bounds desugar input default to a clamp/select', () => {
+    // `freq` carries [0, null] → one-sided lower bound → select(gt(...)).
     const p = parseProgram(`
-      program X(g: float in [0, 1]) -> (out: signal) { out = 0 }
+      program X(freq: freq = 220) -> (out: float) { out = 0 }
     `)
-    expect(p.ports?.inputs).toEqual([
-      { name: 'g', type: nameRef('float'), bounds: [0, 1] },
-    ])
+    const inputs = p.ports!.inputs!
+    expect(inputs).toHaveLength(1)
+    const spec = inputs[0] as ProgramPortSpec
+    expect(spec.name).toBe('freq')
+    expect(spec.type).toEqual(nameRef('freq'))
+    // No `bounds` field survives lowering.
+    expect((spec as { bounds?: unknown }).bounds).toBeUndefined()
+    // Default wrapped: select(gt(220, 0), 220, 0).
+    const dflt = spec.default as { op: string; callee?: { name: string }; args?: unknown[] }
+    expect(dflt.op).toBe('call')
+    expect(dflt.callee?.name).toBe('select')
   })
 
-  test('input with default and bounds', () => {
+  test('explicit `in [lo, hi]` desugars output assign to a clamp call', () => {
     const p = parseProgram(`
-      program X(g: float = 0.5 in [0, 1]) -> (out: signal) { out = 0 }
+      program X() -> (g: float in [0, 1]) { g = 0.5 }
     `)
-    expect(p.ports?.inputs).toEqual([
-      { name: 'g', type: nameRef('float'), default: 0.5, bounds: [0, 1] },
-    ])
-  })
-
-  test('null bound is accepted', () => {
-    const p = parseProgram(`
-      program X(g: float in [null, 1]) -> (out: signal) { out = 0 }
-    `)
-    expect((p.ports!.inputs![0] as ProgramPortSpec).bounds).toEqual([null, 1])
-  })
-
-  test('negative literal bound', () => {
-    const p = parseProgram(`
-      program X(s: float in [-1, 1]) -> (out: signal) { out = 0 }
-    `)
-    expect((p.ports!.inputs![0] as ProgramPortSpec).bounds).toEqual([-1, 1])
+    const assign = p.body.assigns![0] as { op: string; expr: { op: string; callee?: { name: string }; args?: unknown[] } }
+    expect(assign.op).toBe('outputAssign')
+    expect(assign.expr.op).toBe('call')
+    expect(assign.expr.callee?.name).toBe('clamp')
+    expect(assign.expr.args).toEqual([0.5, 0, 1])
+    // Bounds annotation has been stripped from the port spec.
+    const out = p.ports!.outputs![0] as ProgramPortSpec
+    expect((out as { bounds?: unknown }).bounds).toBeUndefined()
   })
 
   test('output cannot have a default', () => {

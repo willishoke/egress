@@ -76,25 +76,25 @@ function collectTypeParamRefs(prog: ResolvedProgram): TypeParamDecl[] {
 
 describe('specialize — input validation', () => {
   test('empty typeArgs on a non-generic program returns input by identity', () => {
-    const p = elab('program X(a: signal) -> (out: signal) { out = a }')
+    const p = elab('program X(a: float) -> (out: float) { out = a }')
     expect(specializeProgram(p, new Map())).toBe(p)
   })
 
   test('extra typeArg (not declared on the program) throws', () => {
-    const p = elab('program X(a: signal) -> (out: signal) { out = a }')
+    const p = elab('program X(a: float) -> (out: float) { out = a }')
     const fakeDecl: TypeParamDecl = { op: 'typeParamDecl', name: 'N' }
     const m = new Map<TypeParamDecl, number>([[fakeDecl, 4]])
     expect(() => specializeProgram(p, m)).toThrow(/not a declared type-param/)
   })
 
   test('missing required typeArg with no default throws', () => {
-    const p = elab(`program X<N: int>(x: signal) -> (out: signal) { out = x }`)
+    const p = elab(`program X<N: int>(x: float) -> (out: float) { out = x }`)
     expect(() => specializeProgram(p, new Map())).toThrow(/missing required type-arg 'N'/)
   })
 
   test('default fill-in: missing typeArg uses declared default', () => {
     const p = elab(`
-      program X<N: int = 8>(x: signal) -> (out: signal) {
+      program X<N: int = 8>(x: float) -> (out: float) {
         reg buf = zeros(N)
         out = buf[0]
         next buf = arraySet(buf, 0, x)
@@ -195,7 +195,7 @@ describe('specialize — sum-type variant identity preserved', () => {
     // still === the original variant after specialization, otherwise
     // Phase C4 sum_lower (which compares by `===`) breaks.
     const src = `
-      program X<N: int = 4>(t: signal) -> (out: signal) {
+      program X<N: int = 4>(t: float) -> (out: float) {
         enum S { A, B(v: float) }
         delay s: S = match s { A => B { v: 1 }, B { v: w } => A { } } init A { }
         out = match s { A => 0, B { v: w } => w }
@@ -240,7 +240,7 @@ describe('specialize — InstanceDecl.typeArgs survive substitution', () => {
     const delay = elab(delaySrc)
     const resolver: ExternalProgramResolver = name => name === 'Delay' ? delay : undefined
     const outerSrc = `
-      program Outer<M: int = 2>(s: signal) -> (out: signal) {
+      program Outer<M: int = 2>(s: float) -> (out: float) {
         del = Delay<N=8>(x: s)
         out = del.y
       }

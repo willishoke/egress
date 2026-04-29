@@ -28,7 +28,7 @@ function clab(src: string): { orig: ResolvedProgram; copy: ResolvedProgram } {
 
 describe('clone — basic structure', () => {
   test('empty-body program clones to a deep copy', () => {
-    const { orig, copy } = clab('program X(a: signal) -> (out: signal) { out = a }')
+    const { orig, copy } = clab('program X(a: float) -> (out: float) { out = a }')
     expect(copy).not.toBe(orig)
     expect(copy.name).toBe('X')
     expect(copy.ports.inputs).not.toBe(orig.ports.inputs)
@@ -39,7 +39,7 @@ describe('clone — basic structure', () => {
   })
 
   test('clone is idempotent for trivial programs', () => {
-    const { orig } = clab('program X(a: signal) -> (out: signal) { out = a }')
+    const { orig } = clab('program X(a: float) -> (out: float) { out = a }')
     const c1 = cloneResolvedProgram(orig)
     const c2 = cloneResolvedProgram(c1)
     expect(JSON.stringify(stripIdentity(c2))).toBe(JSON.stringify(stripIdentity(c1)))
@@ -48,7 +48,7 @@ describe('clone — basic structure', () => {
 
 describe('clone — reference identity (within-clone)', () => {
   test('OutputAssign expr (InputRef) points at cloned InputDecl', () => {
-    const { copy } = clab('program X(a: signal) -> (out: signal) { out = a }')
+    const { copy } = clab('program X(a: float) -> (out: float) { out = a }')
     const inputDecl = copy.ports.inputs[0]
     const assign = copy.body.assigns[0] as OutputAssign
     const ref = assign.expr as InputRef
@@ -58,7 +58,7 @@ describe('clone — reference identity (within-clone)', () => {
 
   test('self-referential RegDecl: nextUpdate.target === regDecl in the clone', () => {
     const { copy } = clab(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         reg s: float = 0
         out = s
         next s = s
@@ -75,7 +75,7 @@ describe('clone — reference identity (within-clone)', () => {
 
   test('multiple RegRefs to same RegDecl all point at the same cloned decl', () => {
     const { copy } = clab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         reg s: float = 0
         out = s + s + s
         next s = a
@@ -99,7 +99,7 @@ describe('clone — reference identity (within-clone)', () => {
 
   test('DelayDecl clone preserves DelayRef identity', () => {
     const { copy } = clab(`
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         delay z = x init 0
         out = z
       }
@@ -113,7 +113,7 @@ describe('clone — reference identity (within-clone)', () => {
 
   test('clone breaks decl identity vs original', () => {
     const { orig, copy } = clab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         reg s: float = 0
         out = s
         next s = a
@@ -130,7 +130,7 @@ describe('clone — reference identity (within-clone)', () => {
 describe('clone — sum-type sharing', () => {
   test('SumTypeDef and SumVariant are shared (===) across clone boundary', () => {
     const src = `
-      program X(trig: signal) -> (out: signal) {
+      program X(trig: float) -> (out: float) {
         enum S { A, B(v: float) }
         delay s: S = match s { A => B { v: 1 }, B { v: w } => A { } } init A { }
         out = match s { A => 0, B { v: w } => w }

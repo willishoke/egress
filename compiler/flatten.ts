@@ -11,7 +11,7 @@
 import type { ExprNode, ExprOpNodeStrict, CallNode, FunctionNode } from './expr.js'
 import { mapChildren } from './walk.js'
 import type { SessionState } from './session.js'
-import type { ProgramInstance, NestedCall, Bounds } from './program_types.js'
+import type { ProgramInstance, NestedCall } from './program_types.js'
 import {
   type InstanceInfo,
   extractInstanceInfo,
@@ -116,24 +116,6 @@ export function normalizeWiringTypes(
 function registerScalarTag(t: PortType | undefined): ScalarType {
   const scalar = t?.tag === 'scalar' ? t.scalar : t?.tag === 'array' && t.element.tag === 'scalar' ? t.element.scalar : 'float'
   return scalar === 'int' ? 'int' : scalar === 'bool' ? 'bool' : 'float'
-}
-
-// ─────────────────────────────────────────────────────────────
-// Bounds enforcement
-// ─────────────────────────────────────────────────────────────
-
-/**
- * Wrap an expression with bounds enforcement.
- * [lo, hi]   → clamp(expr, lo, hi)
- * [lo, null] → max(expr, lo) via select
- * [null, hi] → min(expr, hi) via select
- */
-export function applyBounds(expr: ExprNode, bounds: Bounds): ExprNode {
-  const [lo, hi] = bounds
-  if (lo !== null && hi !== null) return { op: 'clamp', args: [expr, lo, hi] }
-  if (lo !== null) return { op: 'select', args: [{ op: 'gt', args: [expr, lo] }, expr, lo] }
-  if (hi !== null) return { op: 'select', args: [{ op: 'lt', args: [expr, hi] }, expr, hi] }
-  return expr
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1049,8 +1031,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
       expr = offsetRegisters(expr, registerBase, offsetMemo)
       const delayMemo = new WeakMap<object, ExprNode>()
       expr = resolveDelayValues(expr, delayBase, delayMemo)
-      const bounds = def.outputBounds[i]
-      if (bounds) expr = applyBounds(expr, bounds)
       flatOutputExprs.push(expr)
       cbOutputExprs.push(expr)
     }
@@ -1127,8 +1107,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
         const node = defaultExpr?._node ?? 0
         resolved = inlineCalls(typeof node === 'object' ? cloneExpr(node) : node)
       }
-      const inBounds = def.inputBounds[i]
-      if (inBounds) resolved = applyBounds(resolved, inBounds)
       inputMap.set(i, resolved)
     }
 
@@ -1182,8 +1160,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
     const instOutputExprs: ExprNode[] = []
     for (let i = 0; i < def.outputExprNodes.length; i++) {
       let expr = processExpr(def.outputExprNodes[i])
-      const bounds = def.outputBounds[i]
-      if (bounds) expr = applyBounds(expr, bounds)
       expr = wrapOutput(expr)
       flatOutputExprs.push(expr)
       instOutputExprs.push(expr)
@@ -1327,8 +1303,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
         const node = defaultExpr?._node ?? 0
         resolved = inlineCalls(typeof node === 'object' ? cloneExpr(node) : node)
       }
-      const inBounds = def.inputBounds[i]
-      if (inBounds) resolved = applyBounds(resolved, inBounds)
       inputMap.set(i, resolved)
     }
 
@@ -1466,16 +1440,6 @@ export function flattenExpressions(session: SessionState): FlatExpressions {
     const outputIdx = inst._def.outputNames.indexOf(output)
     if (outputIdx === -1) continue
     const flatIdx = (outputStart.get(instance) ?? 0) + outputIdx
-
-    // Safety clamp: ensure audio outputs stay within [-1, 1].
-    // Skip if the output already has bounds that are within [-1, 1].
-    const bounds = inst._def.outputBounds[outputIdx]
-    const withinSafe = bounds
-      && bounds[0] !== null && bounds[0] >= -1
-      && bounds[1] !== null && bounds[1] <= 1
-    if (!withinSafe) {
-      flatOutputExprs[flatIdx] = applyBounds(flatOutputExprs[flatIdx], [-1, 1])
-    }
 
     outputIndices.push(flatIdx)
   }

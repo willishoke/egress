@@ -42,10 +42,17 @@ import type {
 } from './nodes.js'
 import type { ExprNode } from '../expr.js'
 import type { SessionState } from '../session.js'
-import { coerce } from '../expr.js'
+import { coerce, SignalExpr } from '../expr.js'
+
+/** True if `n` is a primitive that `coerce` accepts. Op-shaped objects
+ *  (e.g. a `clamp(...)` from bounds lowering) must be wrapped with
+ *  `SignalExpr.fromNode` instead. */
+function isCoercible(n: import('../expr.js').ExprNode): boolean {
+  return typeof n === 'number' || typeof n === 'boolean' || Array.isArray(n)
+}
 import {
   ProgramType,
-  type ProgramDef, type NestedCall, type ValueCoercible, type Bounds,
+  type ProgramDef, type NestedCall, type ValueCoercible,
 } from '../program_types.js'
 import {
   type PortType as LegacyPortType,
@@ -108,11 +115,6 @@ export function loadProgramDefFromResolved(
   const inputPortTypes  = prog.ports.inputs.map(d => convertPortType(d.type))
   const outputPortTypes = prog.ports.outputs.map(d => convertPortType(d.type))
   const registerPortTypes = regDecls.map(d => regPortType(d))
-
-  // Legacy emits null-but-typed-undefined entries as `[null]` after JSON
-  // round-trip; in-memory they are `undefined`. Match by leaving undefined.
-  const inputBounds:  (Bounds | null)[] = prog.ports.inputs .map(d => d.bounds ?? null)
-  const outputBounds: (Bounds | null)[] = prog.ports.outputs.map(d => d.bounds ?? null)
 
   // ── Register init values ──
   // Legacy emits the bare value for non-zeros initialisers; for `zeros{N}`
@@ -215,8 +217,13 @@ export function loadProgramDefFromResolved(
     if (d.default === undefined) continue
     const lowered = lower(d.default)
     rawInputDefaults[d.name] = lowered
-    // SignalExpr.coerce accepts ExprNode — number/boolean/object — unchanged.
-    inputDefaults[i] = coerce(lowered as import('../expr.js').ExprCoercible)
+    // Defaults can be primitives (number/boolean/array) or arbitrary
+    // op-shaped expressions — bounded ports lower their default into
+    // a `clamp(...)` call. `coerce` only handles primitives, so wrap
+    // op-shaped trees directly as `SignalExpr.fromNode`.
+    inputDefaults[i] = isCoercible(lowered)
+      ? coerce(lowered as import('../expr.js').ExprCoercible)
+      : SignalExpr.fromNode(lowered)
   }
 
   const def: ProgramDef = {
@@ -237,8 +244,6 @@ export function loadProgramDefFromResolved(
     delayUpdateNodes,
     nestedCalls,
     breaksCycles: false,
-    inputBounds,
-    outputBounds,
   }
 
   return new ProgramType(def)

@@ -1076,13 +1076,11 @@ function handleListPrograms() {
         inputs:    d.inputNames.map((n, i) => ({
           name: n,
           type: portTypeOrNull(d.inputPortTypes[i]),
-          bounds: d.inputBounds[i] ?? null,
           default: defaultsMap[n] ?? null,
         })),
         outputs: d.outputNames.map((n, i) => ({
           name: n,
           type: portTypeOrNull(d.outputPortTypes[i]),
-          bounds: d.outputBounds[i] ?? null,
         })),
         registers: d.registerNames.map((n, i) => ({ name: n, type: portTypeOrNull(d.registerPortTypes[i]) })),
         type_params: null as Record<string, { type: 'int'; default?: number }> | null,
@@ -1094,13 +1092,11 @@ function handleListPrograms() {
       inputs: prog.ports.inputs.map(i => ({
         name: i.name,
         type: null,
-        bounds: i.bounds ?? null,
         default: null,
       })),
       outputs: prog.ports.outputs.map(o => ({
         name: o.name,
         type: null,
-        bounds: o.bounds ?? null,
       })),
       registers: [] as Array<{ name: string; type: string | null }>,
       type_params: prog.typeParams.length > 0
@@ -1132,7 +1128,6 @@ function handleGetInfo(instanceName: string) {
       inputs:  inst.inputNames.map((n, i) => ({
         name: n, index: i,
         type: inst._def.inputPortTypes[i] ?? null,
-        bounds: inst._def.inputBounds[i] ?? null,
         expr: session.inputExprNodes.get(`${instanceName}:${n}`) ?? null,
         pretty: session.inputExprNodes.has(`${instanceName}:${n}`)
           ? prettyExpr(session.inputExprNodes.get(`${instanceName}:${n}`)!, session.instanceRegistry)
@@ -1141,7 +1136,6 @@ function handleGetInfo(instanceName: string) {
       outputs: inst.outputNames.map((n, i) => ({
         name: n, index: i,
         type: inst._def.outputPortTypes[i] ?? null,
-        bounds: inst._def.outputBounds[i] ?? null,
       })),
       registers: inst.registerNames.map((n, i) => ({
         name: n, index: i, type: inst.registerPortType(i) ?? null,
@@ -1574,7 +1568,7 @@ type_params, sample_rate, breaks_cycles, and top-level session metadata
 (params, audio_outputs, config).
 
 Decl node shapes:
-- reg_decl:      { op, name, init, type?, bounds? }
+- reg_decl:      { op, name, init, type? }
 - delay_decl:    { op, name, update, init? }
 - instance_decl: { op, name, program, inputs?, type_args? }
 - program_decl:  { op, name, program: <program node> }

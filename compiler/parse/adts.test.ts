@@ -118,37 +118,20 @@ describe('adts — enum decls', () => {
 // ─────────────────────────────────────────────────────────────
 
 describe('adts — type aliases', () => {
-  test('alias with positive bounds', () => {
+  test('alias declaration parses to a NameRef base', () => {
     const p = parseProgram(`
       program X() {
-        type Freq = float in [0, 20000]
+        type Freq = float
       }
     `)
     expect(p.ports?.type_defs).toEqual([
-      { kind: 'alias', name: 'Freq', base: nameRef('float'), bounds: [0, 20000] },
+      { kind: 'alias', name: 'Freq', base: nameRef('float') },
     ])
   })
 
-  test('alias with negative bound', () => {
-    const p = parseProgram(`
-      program X() {
-        type Sig = float in [-1, 1]
-      }
-    `)
-    expect((p.ports!.type_defs![0] as AliasTypeDef).bounds).toEqual([-1, 1])
-  })
-
-  test('alias with null bounds', () => {
-    const p = parseProgram(`
-      program X() {
-        type AnyFloat = float in [null, null]
-      }
-    `)
-    expect((p.ports!.type_defs![0] as AliasTypeDef).bounds).toEqual([null, null])
-  })
-
-  test('alias missing `in` rejected', () => {
-    expect(() => parseProgram(`program X() { type T = float }`)).toThrow(ParseError)
+  test('alias with `in [...]` bounds is rejected (Phase D P0.4)', () => {
+    expect(() => parseProgram(`program X() { type Sig = float in [-1, 1] }`))
+      .toThrow(ParseError)
   })
 })
 
@@ -162,7 +145,7 @@ describe('adts — multiple type defs', () => {
       program X() {
         struct Pair { a: float, b: float }
         enum Tag { A, B }
-        type Freq = float in [0, 20000]
+        type Freq = float
       }
     `)
     expect(p.ports?.type_defs).toHaveLength(3)
@@ -362,7 +345,7 @@ describe('adts — program integration', () => {
       program Synth(freq: freq = 220) -> (out: signal) {
         enum Mode { Sine, Saw }
         struct Pair { a: float, b: float }
-        type Bipolar = float in [-1, 1]
+        type Bipolar = float
 
         reg mode: Mode = Sine
 
@@ -376,8 +359,13 @@ describe('adts — program integration', () => {
     expect(p.ports?.type_defs).toHaveLength(3)
     expect(p.body.decls).toHaveLength(1)  // regDecl 'mode'
     expect(p.body.assigns).toHaveLength(1)
-    const matchExpr = (p.body.assigns[0] as { expr: { op: string } }).expr
-    expect(matchExpr.op).toBe('match')
+    // `out: signal` triggers built-in alias bounds lowering — the assign's
+    // RHS is wrapped in `clamp(<match>, -1, 1)` (parser call shape).
+    const assignExpr = (p.body.assigns[0] as { expr: { op: string; callee?: { name: string }; args?: unknown[] } }).expr
+    expect(assignExpr.op).toBe('call')
+    expect(assignExpr.callee?.name).toBe('clamp')
+    const inner = assignExpr.args![0] as { op: string }
+    expect(inner.op).toBe('match')
   })
 
   test('struct/enum/type are forbidden when no body opts allow them', () => {

@@ -465,36 +465,12 @@
         "result_type": "float"
       },
       {
-        "tag": "Clamp",
+        "tag": "Add",
         "dst": 23,
         "args": [
           {
             "kind": "reg",
             "slot": 22,
-            "scalar_type": "float"
-          },
-          {
-            "kind": "const",
-            "val": -1,
-            "scalar_type": "float"
-          },
-          {
-            "kind": "const",
-            "val": 1,
-            "scalar_type": "float"
-          }
-        ],
-        "loop_count": 1,
-        "strides": [],
-        "result_type": "float"
-      },
-      {
-        "tag": "Add",
-        "dst": 24,
-        "args": [
-          {
-            "kind": "reg",
-            "slot": 23,
             "scalar_type": "float"
           },
           {
@@ -508,11 +484,11 @@
         "result_type": "float"
       }
     ],
-    "register_count": 25,
+    "register_count": 24,
     "array_slot_count": 0,
     "array_slot_sizes": [],
     "output_targets": [
-      24
+      23
     ],
     "register_targets": []
   }

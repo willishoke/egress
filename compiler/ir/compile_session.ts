@@ -57,6 +57,10 @@ export function compileSession(session: SessionState): FlatPlan {
   return compileResolved(lowered)
 }
 
+/** Test-only export: expose the synthetic top-level builder so equiv
+ *  diagnostics can inspect the IR before strata runs. */
+export const _materializeSessionForTesting = materializeSession
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Session → synthetic ResolvedProgram
 // ─────────────────────────────────────────────────────────────────────────────

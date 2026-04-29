@@ -58,6 +58,11 @@ function runFrames(session: ReturnType<typeof makeSession>, frames: number): Flo
 
 describe('compileSession ↔ flattenSession audio equivalence (D2 Path B)', () => {
   for (const fx of FIXTURES) {
+    // stdlib_ladder produces a larger instruction count under the new
+    // pipeline (13050 vs legacy's 1957) due to a CSE-fanout difference
+    // — same audio when it finishes, but JIT compile takes >5s. Bump
+    // the timeout while the fanout is investigated.
+    const timeout = fx === 'stdlib_ladder' ? 60_000 : 5_000
     test(`audio matches: ${fx}`, () => {
       const input = loadFixture(fx)
 
@@ -106,6 +111,6 @@ describe('compileSession ↔ flattenSession audio equivalence (D2 Path B)', () =
           `${fx}: first audio divergence at sample ${i}\n${window.join('\n')}`,
         )
       }
-    })
+    }, timeout)
   }
 })

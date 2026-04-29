@@ -45,7 +45,8 @@ export function compileResolved(prog: ResolvedProgram): FlatPlan {
   }
 
   const memo = new WeakMap<object, ExprNode>()
-  const lower = (e: ResolvedExpr): ExprNode => resolvedToSlotted(e, slots, memo)
+  const regCount = slots.regDecls.length
+  const lower = (e: ResolvedExpr): ExprNode => resolveDelayValues(resolvedToSlotted(e, slots, memo), regCount)
 
   // ── Output expressions ──
   const outputExprByDecl = new Map<OutputDecl, ResolvedExpr>()
@@ -175,6 +176,42 @@ function delayInit(d: DelayDecl): number {
   if (typeof d.init === 'number') return d.init
   if (typeof d.init === 'boolean') return d.init ? 1 : 0
   return 0
+}
+
+/** Walk a lowered `ExprNode` tree and rewrite every `{op: 'delayValue',
+ *  node_id}` to `{op: 'reg', id: regCount + node_id}` — a state-register
+ *  read at the combined slot index. emit_numeric only knows the
+ *  unified state-register layout (`reg` op kind); the legacy
+ *  `flatten.ts:resolveDelayValues` runs the same rewrite before
+ *  emit_numeric. Doing the rewrite here keeps `resolvedToSlotted`'s
+ *  output identical across the legacy and new emit paths. */
+function resolveDelayValues(node: ExprNode, regCount: number): ExprNode {
+  if (typeof node !== 'object' || node === null) return node
+  if (Array.isArray(node)) {
+    let mutated = false
+    const out: ExprNode[] = []
+    for (const item of node) {
+      const r = resolveDelayValues(item, regCount)
+      if (r !== item) mutated = true
+      out.push(r)
+    }
+    return mutated ? out : node
+  }
+  const obj = node as Record<string, unknown>
+  if (obj.op === 'delayValue' && typeof obj.node_id === 'number') {
+    return { op: 'reg', id: regCount + obj.node_id }
+  }
+  // Recurse into args (the common case) and any other ExprNode-shaped fields.
+  let mutated = false
+  const fresh: Record<string, unknown> = { ...obj }
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === 'op') continue
+    if (typeof v === 'object' && v !== null) {
+      const r = resolveDelayValues(v as ExprNode, regCount)
+      if (r !== v) { fresh[k] = r; mutated = true }
+    }
+  }
+  return mutated ? (fresh as unknown as ExprNode) : node
 }
 
 void buildSlotMaps  // satisfies linter when SlotMaps is the only export consumed

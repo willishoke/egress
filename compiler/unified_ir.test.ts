@@ -4,10 +4,10 @@
  * session and re-compiled through `compileSession`. Protects the
  * resolved-IR pipeline from silent regressions.
  *
- * Audio equivalence between the legacy `flattenSession` and the
- * post-cutover `compileSession` is gated separately by
- * `compile_session_equiv.test.ts`; this file pins the
- * `tropical_plan_4` shape directly.
+ * Pins the `tropical_plan_4` shape directly. Audio equivalence vs. the
+ * legacy `flattenSession` was gated by the now-retired
+ * `compile_session_equiv.test.ts` during the D2 cutover; post-cutover
+ * this file is the regression gate.
  */
 
 import { describe, test, expect } from 'bun:test'

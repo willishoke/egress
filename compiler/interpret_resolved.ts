@@ -8,8 +8,8 @@
  * `materializeSessionToResolvedIR`, so the cross-check tests
  * end-to-end semantic agreement of the IR against the emitter.
  *
- * Phase D D3-b: replaces `interpret.ts` (which walked ExprNode produced
- * by the now-retired `flatten.ts:flattenExpressions`).
+ * Phase D D3-b: replaces the retired `interpret.ts` (which walked
+ * ExprNode produced by the legacy `flatten.ts:flattenExpressions`).
  *
  * No FFI, no C++ dependency. Pure TS, fully deterministic.
  */

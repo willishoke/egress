@@ -42,7 +42,14 @@ import type {
 } from './nodes.js'
 import type { ExprNode } from '../expr.js'
 import type { SessionState } from '../session.js'
-import { coerce } from '../expr.js'
+import { coerce, SignalExpr } from '../expr.js'
+
+/** True if `n` is a primitive that `coerce` accepts. Op-shaped objects
+ *  (e.g. a `clamp(...)` from bounds lowering) must be wrapped with
+ *  `SignalExpr.fromNode` instead. */
+function isCoercible(n: import('../expr.js').ExprNode): boolean {
+  return typeof n === 'number' || typeof n === 'boolean' || Array.isArray(n)
+}
 import {
   ProgramType,
   type ProgramDef, type NestedCall, type ValueCoercible,
@@ -210,8 +217,13 @@ export function loadProgramDefFromResolved(
     if (d.default === undefined) continue
     const lowered = lower(d.default)
     rawInputDefaults[d.name] = lowered
-    // SignalExpr.coerce accepts ExprNode — number/boolean/object — unchanged.
-    inputDefaults[i] = coerce(lowered as import('../expr.js').ExprCoercible)
+    // Defaults can be primitives (number/boolean/array) or arbitrary
+    // op-shaped expressions — bounded ports lower their default into
+    // a `clamp(...)` call. `coerce` only handles primitives, so wrap
+    // op-shaped trees directly as `SignalExpr.fromNode`.
+    inputDefaults[i] = isCoercible(lowered)
+      ? coerce(lowered as import('../expr.js').ExprCoercible)
+      : SignalExpr.fromNode(lowered)
   }
 
   const def: ProgramDef = {

@@ -110,13 +110,13 @@ const COMBINATORS = ['let', 'fold', 'scan', 'generate', 'iterate', 'chain', 'map
 
 describe('arrayLower — identity on plain programs', () => {
   test('no combinators, no array ops → input returned by identity', () => {
-    const p = elab('program X(a: signal) -> (out: signal) { out = a + 1 }')
+    const p = elab('program X(a: float) -> (out: float) { out = a + 1 }')
     expect(arrayLower(p)).toBe(p)
   })
 
   test('arithmetic-only register update returns input by identity', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         reg s: float = 0
         out = s + a
         next s = a * 0.5
@@ -133,7 +133,7 @@ describe('arrayLower — identity on plain programs', () => {
 describe('arrayLower — let', () => {
   test('single binding substitutes value into body', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         out = let { y: a + 1 } in y * 2
       }
     `)
@@ -157,7 +157,7 @@ describe('arrayLower — let', () => {
     // the inner binder, not the outer. Decl-identity substitution makes
     // shadowing structurally impossible to get wrong.
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         out = let { y: a } in let { y: 99 } in y
       }
     `)
@@ -170,7 +170,7 @@ describe('arrayLower — let', () => {
   test('let inside a delay update lowers correctly', () => {
     // AllpassDelay: `next s = let { y: coeff * input + s } in input - coeff * y`
     const p = elab(`
-      program X(input: signal, coeff: float = 0.5) -> (out: signal) {
+      program X(input: float, coeff: float = 0.5) -> (out: float) {
         reg s: float = 0
         out = coeff * input + s
         next s = let { y: coeff * input + s } in input - coeff * y
@@ -322,7 +322,7 @@ describe('arrayLower — iterate', () => {
 describe('arrayLower — chain', () => {
   test('chain of n applications threads through an accumulator (scalar result)', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         out = chain(3, a, (x) => x + 1)
       }
     `)
@@ -420,7 +420,7 @@ describe('arrayLower — arraySet survives', () => {
     // The resulting program should still contain an `arraySet` op
     // (we don't lower it; load.ts emits it directly).
     const p = elab(`
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         reg buf = zeros(4)
         out = buf[sampleIndex() % 4]
         next buf = arraySet(buf, sampleIndex() % 4, x)
@@ -446,7 +446,7 @@ describe('arrayLower — sharing discipline', () => {
     // iteration by design); we just check the pass terminates and
     // produces a well-formed program.
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         out = chain(8, a, (x) => x + a)
       }
     `)
@@ -458,7 +458,7 @@ describe('arrayLower — sharing discipline', () => {
     // A let-bound expression used inside a generate body — the kind of
     // pattern that exposes shadowing/sharing bugs in the legacy.
     const p = elab(`
-      program X(a: signal) -> (out: float[16]) {
+      program X(a: float) -> (out: float[16]) {
         out = generate(16, (i) => let { y: a + i } in y * y)
       }
     `)
@@ -477,7 +477,7 @@ describe('arrayLower — sharing discipline', () => {
 describe('arrayLower — combinators on every site', () => {
   test('combinator inside register init lowers', () => {
     const p = elab(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         reg s: float = let { x: 1; y: 2 } in x + y
         out = s
         next s = s
@@ -490,7 +490,7 @@ describe('arrayLower — combinators on every site', () => {
   test('combinator inside delay init and update lowers', () => {
     // delay <name> = <update_expr> init <init_expr>
     const p = elab(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         delay d = let { x: 1 } in x init 0
         out = d
       }

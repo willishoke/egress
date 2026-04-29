@@ -71,6 +71,7 @@ import type {
 } from '../program.js'
 import type { ExprNode as LegacyExprNode } from '../expr.js'
 import type { TypeDefJSON as LegacyTypeDefJSON } from '../session.js'
+import { lowerBoundsToClamps } from './lower_bounds.js'
 
 // ─────────────────────────────────────────────────────────────
 // Op classification
@@ -138,7 +139,11 @@ export function raiseProgram(legacy: LegacyProgramNode): ParsedProgramNode {
     if (ports !== undefined) out.ports = ports
   }
   if (legacy.breaks_cycles === true) out.breaks_cycles = true
-  return out
+  // Apply built-in alias bounds (signal/freq/...) and any explicit
+  // `bounds` carried through the JSON shape, lowering them to clamp
+  // ops on output assigns and input defaults. Same desugaring `.trop`
+  // ingest runs at parse time — see `compiler/parse/lower_bounds.ts`.
+  return lowerBoundsToClamps(out)
 }
 
 // ─────────────────────────────────────────────────────────────

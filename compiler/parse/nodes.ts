@@ -411,6 +411,12 @@ export interface ProgramPortSpec {
   name: string
   type?: PortTypeDecl
   default?: ExprNode
+  /** Source-level `in [lo, hi]` bound annotation. Lowered to explicit
+   *  `clamp` ops by `lowerBoundsToClamps` (compiler/parse/lower_bounds.ts)
+   *  before the IR is exposed to the elaborator. Either side may be
+   *  `null` for an open bound (e.g. `freq` is `[0, null]`). The field
+   *  is parser-internal — code outside the parser never observes it. */
+  bounds?: [number | null, number | null]
 }
 
 /** A port entry: bare-name short form, or full spec. */

@@ -68,7 +68,7 @@ function declNames(decls: BodyDecl[]): string[] {
 describe('inlineInstances — basic shapes', () => {
   test('passthrough: program with no instances returns input by reference', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         reg s: float = 0
         out = s + a
         next s = a
@@ -79,8 +79,8 @@ describe('inlineInstances — basic shapes', () => {
 
   test('one instance, no nesting: NestedOut replaced, instance dropped', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Inner(x: signal) -> (y: signal) { y = x + 1 }
+      program X(a: float) -> (out: float) {
+        program Inner(x: float) -> (y: float) { y = x + 1 }
         inst = Inner(x: a)
         out = inst.y
       }
@@ -100,9 +100,9 @@ describe('inlineInstances — basic shapes', () => {
 
   test('two instances composed: A.out wired into B.in', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program A(x: signal) -> (y: signal) { y = x * 2 }
-        program B(z: signal) -> (w: signal) { w = z + 10 }
+      program X(a: float) -> (out: float) {
+        program A(x: float) -> (y: float) { y = x * 2 }
+        program B(z: float) -> (w: float) { w = z + 10 }
         i1 = A(x: a)
         i2 = B(z: i1.y)
         out = i2.w
@@ -122,8 +122,8 @@ describe('inlineInstances — basic shapes', () => {
 
   test('inner with reg: lifted reg renamed with instance prefix', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Inner(x: signal) -> (y: signal) {
+      program X(a: float) -> (out: float) {
+        program Inner(x: float) -> (y: float) {
           reg s: float = 0
           y = s + x
           next s = x
@@ -145,8 +145,8 @@ describe('inlineInstances — basic shapes', () => {
 
   test('multiple instances of the same inner program: names disambiguate', () => {
     const p = elab(`
-      program X(a: signal, b: signal) -> (out: signal) {
-        program Inner(x: signal) -> (y: signal) {
+      program X(a: float, b: float) -> (out: float) {
+        program Inner(x: float) -> (y: float) {
           reg s: float = 0
           y = s + x
           next s = x
@@ -164,8 +164,8 @@ describe('inlineInstances — basic shapes', () => {
 
   test('inner with delay: lifted delay renamed with instance prefix', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Inner(x: signal) -> (y: signal) {
+      program X(a: float) -> (out: float) {
+        program Inner(x: float) -> (y: float) {
           delay d: float = x init 0
           y = d
         }
@@ -181,9 +181,9 @@ describe('inlineInstances — basic shapes', () => {
 
   test('nested instance: inner contains another instance', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Leaf(x: signal) -> (y: signal) { y = x + 1 }
-        program Mid(p: signal) -> (q: signal) {
+      program X(a: float) -> (out: float) {
+        program Leaf(x: float) -> (y: float) { y = x + 1 }
+        program Mid(p: float) -> (q: float) {
           inner = Leaf(x: p)
           q = inner.y * 2
         }
@@ -205,8 +205,8 @@ describe('inlineInstances — basic shapes', () => {
     // After inlining + specialization, the lifted reg's init is a
     // zeros-of-size-8 expression.
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program FixedDelay<N: int = 4>(x: signal) -> (y: signal) {
+      program X(a: float) -> (out: float) {
+        program FixedDelay<N: int = 4>(x: float) -> (y: float) {
           reg buf: float = zeros(N)
           y = buf[0]
           next buf = arraySet(buf, 0, x)
@@ -231,8 +231,8 @@ describe('inlineInstances — basic shapes', () => {
 
   test('lifted decls follow surviving outer decls in body order', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Inner(x: signal) -> (y: signal) {
+      program X(a: float) -> (out: float) {
+        program Inner(x: float) -> (y: float) {
           reg t: float = 0
           y = t + x
           next t = x
@@ -254,8 +254,8 @@ describe('inlineInstances — basic shapes', () => {
 describe('inlineInstances — multi-instance + nested-generic interactions', () => {
   test('two instances of the same generic with different type-args', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Buffer<N: int = 4>(x: signal) -> (y: signal) {
+      program X(a: float) -> (out: float) {
+        program Buffer<N: int = 4>(x: float) -> (y: float) {
           reg buf: float = zeros(N)
           y = buf[0]
           next buf = arraySet(buf, 0, x)
@@ -285,8 +285,8 @@ describe('inlineInstances — multi-instance + nested-generic interactions', () 
     // same program share OutputDecl objects, so substitution keyed
     // only by OutputDecl forms a self-cycle and recurses forever.
     const p = elab(`
-      program X(input: signal) -> (output: signal) {
-        program Stage(x: signal) -> (y: signal) {
+      program X(input: float) -> (output: float) {
+        program Stage(x: float) -> (y: float) {
           reg s: float = 0
           y = s + x
           next s = x
@@ -308,8 +308,8 @@ describe('inlineInstances — multi-instance + nested-generic interactions', () 
 describe('inlineInstances — error and edge cases', () => {
   test('input default is used when the outer doesn\'t wire the port', () => {
     const p = elab(`
-      program X(a: signal) -> (out: signal) {
-        program Inner(x: signal = 5, y: signal) -> (z: signal) { z = x + y }
+      program X(a: float) -> (out: float) {
+        program Inner(x: float = 5, y: float) -> (z: float) { z = x + y }
         inst = Inner(y: a)
         out = inst.z
       }

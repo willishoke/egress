@@ -359,8 +359,13 @@ describe('adts — program integration', () => {
     expect(p.ports?.type_defs).toHaveLength(3)
     expect(p.body.decls).toHaveLength(1)  // regDecl 'mode'
     expect(p.body.assigns).toHaveLength(1)
-    const matchExpr = (p.body.assigns[0] as { expr: { op: string } }).expr
-    expect(matchExpr.op).toBe('match')
+    // `out: signal` triggers built-in alias bounds lowering — the assign's
+    // RHS is wrapped in `clamp(<match>, -1, 1)` (parser call shape).
+    const assignExpr = (p.body.assigns[0] as { expr: { op: string; callee?: { name: string }; args?: unknown[] } }).expr
+    expect(assignExpr.op).toBe('call')
+    expect(assignExpr.callee?.name).toBe('clamp')
+    const inner = assignExpr.args![0] as { op: string }
+    expect(inner.op).toBe('match')
   })
 
   test('struct/enum/type are forbidden when no body opts allow them', () => {

@@ -34,7 +34,7 @@ function elabSrc(src: string): ResolvedProgram {
 
 describe('elaborator — value references', () => {
   test('input ref: nameRef resolves to InputRef.decl === the input port', () => {
-    const p = elabSrc('program X(freq: signal) -> (out: signal) { out = freq }')
+    const p = elabSrc('program X(freq: float) -> (out: float) { out = freq }')
     const inputDecl = p.ports.inputs[0]
     const outputAssign = p.body.assigns[0] as OutputAssign
     const expr = outputAssign.expr as InputRef
@@ -44,7 +44,7 @@ describe('elaborator — value references', () => {
 
   test('reg ref: nameRef resolves to RegRef.decl === the regDecl', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         reg s: float = 0
         out = s
         next s = s
@@ -66,7 +66,7 @@ describe('elaborator — value references', () => {
 
   test('delay ref: nameRef resolves to DelayRef.decl', () => {
     const p = elabSrc(`
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         delay z = x init 0
         out = z
       }
@@ -80,7 +80,7 @@ describe('elaborator — value references', () => {
 
   test('param ref: nameRef resolves to ParamRef.decl', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         param cutoff: smoothed = 1000
         out = cutoff
       }
@@ -94,7 +94,7 @@ describe('elaborator — value references', () => {
 
   test('type-param ref: nameRef resolves to TypeParamRef.decl', () => {
     const p = elabSrc(`
-      program X<N: int = 4>() -> (out: signal) {
+      program X<N: int = 4>() -> (out: float) {
         out = N
       }
     `)
@@ -106,7 +106,7 @@ describe('elaborator — value references', () => {
   })
 
   test('unknown name: clear error', () => {
-    expect(() => elabSrc('program X() -> (out: signal) { out = nope }'))
+    expect(() => elabSrc('program X() -> (out: float) { out = nope }'))
       .toThrow(/unknown name 'nope'/)
   })
 })
@@ -114,7 +114,7 @@ describe('elaborator — value references', () => {
 describe('elaborator — sentinel calls', () => {
   test('sample_rate() resolves to SampleRate node', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) { out = sample_rate() }
+      program X() -> (out: float) { out = sample_rate() }
     `)
     const out = p.body.assigns[0] as OutputAssign
     expect((out.expr as ResolvedExprOpNode).op).toBe('sampleRate')
@@ -122,7 +122,7 @@ describe('elaborator — sentinel calls', () => {
 
   test('sample_index() resolves to SampleIndex node', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) { out = sample_index() }
+      program X() -> (out: float) { out = sample_index() }
     `)
     const out = p.body.assigns[0] as OutputAssign
     expect((out.expr as ResolvedExprOpNode).op).toBe('sampleIndex')
@@ -130,7 +130,7 @@ describe('elaborator — sentinel calls', () => {
 
   test('sample_rate(arg) errors — nullary only', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) { out = sample_rate(0) }
+      program X() -> (out: float) { out = sample_rate(0) }
     `)).toThrow(/no arguments/)
   })
 })
@@ -138,7 +138,7 @@ describe('elaborator — sentinel calls', () => {
 describe('elaborator — builtin calls', () => {
   test('clamp(v, lo, hi) resolves to ClampNode', () => {
     const p = elabSrc(`
-      program X(v: signal) -> (out: signal) { out = clamp(v, -1, 1) }
+      program X(v: float) -> (out: float) { out = clamp(v, -1, 1) }
     `)
     const out = p.body.assigns[0] as OutputAssign
     const c = out.expr as ClampNode
@@ -148,7 +148,7 @@ describe('elaborator — builtin calls', () => {
 
   test('select(c, t, e) resolves to SelectNode', () => {
     const p = elabSrc(`
-      program X(g: bool) -> (out: signal) { out = select(g, 1, 0) }
+      program X(g: bool) -> (out: float) { out = select(g, 1, 0) }
     `)
     const out = p.body.assigns[0] as OutputAssign
     const s = out.expr as SelectNode
@@ -157,7 +157,7 @@ describe('elaborator — builtin calls', () => {
 
   test('sqrt(x) resolves to UnaryOpNode with sqrt op', () => {
     const p = elabSrc(`
-      program X(x: signal) -> (out: signal) { out = sqrt(x) }
+      program X(x: float) -> (out: float) { out = sqrt(x) }
     `)
     const out = p.body.assigns[0] as OutputAssign
     const u = out.expr as { op: string }
@@ -166,13 +166,13 @@ describe('elaborator — builtin calls', () => {
 
   test('unknown function call errors', () => {
     expect(() => elabSrc(`
-      program X(x: signal) -> (out: signal) { out = mystery(x) }
+      program X(x: float) -> (out: float) { out = mystery(x) }
     `)).toThrow(/unknown function 'mystery'/)
   })
 
   test('clamp wrong arity errors', () => {
     expect(() => elabSrc(`
-      program X(v: signal) -> (out: signal) { out = clamp(v, -1) }
+      program X(v: float) -> (out: float) { out = clamp(v, -1) }
     `)).toThrow(/'clamp' takes 3 arguments/)
   })
 })
@@ -184,7 +184,7 @@ describe('elaborator — builtin calls', () => {
 describe('elaborator — binders are decl objects with refs', () => {
   test('let binders become BinderDecl, body refs hold the decl', () => {
     const p = elabSrc(`
-      program X(a: signal) -> (out: signal) {
+      program X(a: float) -> (out: float) {
         out = let { x: a } in x + x
       }
     `)
@@ -206,7 +206,7 @@ describe('elaborator — binders are decl objects with refs', () => {
 
   test('shadowing: inner let binder shadows outer; refs distinguish', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         out = let { x: 1 } in let { x: 2 } in x
       }
     `)
@@ -222,7 +222,7 @@ describe('elaborator — binders are decl objects with refs', () => {
 
   test('fold binders (acc, elem) become two BinderDecls', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         out = fold([1, 2, 3], 0, (acc, e) => acc + e)
       }
     `)
@@ -242,7 +242,7 @@ describe('elaborator — binders are decl objects with refs', () => {
 
   test('generate binder', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         out = generate(4, (i) => i * i)
       }
     `)
@@ -258,7 +258,7 @@ describe('elaborator — binders are decl objects with refs', () => {
 
   test('binders do not leak outside their parent', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         out = (let { x: 1 } in x) + x
       }
     `)).toThrow(/unknown name 'x'/)
@@ -272,7 +272,7 @@ describe('elaborator — binders are decl objects with refs', () => {
 describe('elaborator — tags', () => {
   test('tag construction: variant resolves, payload field decl-keyed', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         enum Maybe { Some(value: float), None }
         out = match Some { value: 42 } {
           Some { value: v } => v,
@@ -294,7 +294,7 @@ describe('elaborator — tags', () => {
 
   test('tag with unknown variant errors', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         enum Mode { On, Off }
         out = match Bogus { } {
           On => 1,
@@ -306,7 +306,7 @@ describe('elaborator — tags', () => {
 
   test('tag missing required payload field errors', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         enum Pair { P(a: float, b: float) }
         out = match P { a: 1 } { P { a: x, b: y } => x + y }
       }
@@ -315,7 +315,7 @@ describe('elaborator — tags', () => {
 
   test('tag with extra payload field errors', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         enum Pair { P(a: float) }
         out = match P { a: 1, b: 2 } { P { a: x } => x }
       }
@@ -326,7 +326,7 @@ describe('elaborator — tags', () => {
 describe('elaborator — match', () => {
   test('match scrutinee + arms resolve; type back-pointer set', () => {
     const p = elabSrc(`
-      program X(v: signal) -> (out: signal) {
+      program X(v: float) -> (out: float) {
         enum Color { Red, Green, Blue }
         out = match v {
           Red => 1,
@@ -346,7 +346,7 @@ describe('elaborator — match', () => {
 
   test('match arm payload binders become BinderDecls in scope of arm body', () => {
     const p = elabSrc(`
-      program X(v: signal) -> (out: signal) {
+      program X(v: float) -> (out: float) {
         enum N { Hz(freq: float, gain: float), Off }
         out = match v {
           Hz { freq: f, gain: g } => f * g,
@@ -368,7 +368,7 @@ describe('elaborator — match', () => {
 
   test('non-exhaustive match errors with missing variant name', () => {
     expect(() => elabSrc(`
-      program X(v: signal) -> (out: signal) {
+      program X(v: float) -> (out: float) {
         enum Color { Red, Green, Blue }
         out = match v { Red => 1, Green => 2 }
       }
@@ -377,7 +377,7 @@ describe('elaborator — match', () => {
 
   test('arm with wrong variant for the inferred sum type errors', () => {
     expect(() => elabSrc(`
-      program X(v: signal) -> (out: signal) {
+      program X(v: float) -> (out: float) {
         enum A { On }
         enum B { Off }
         out = match v { On => 1, Off => 0 }
@@ -387,7 +387,7 @@ describe('elaborator — match', () => {
 
   test('duplicate arm errors', () => {
     expect(() => elabSrc(`
-      program X(v: signal) -> (out: signal) {
+      program X(v: float) -> (out: float) {
         enum Color { Red, Green }
         out = match v { Red => 1, Green => 2, Red => 3 }
       }
@@ -396,7 +396,7 @@ describe('elaborator — match', () => {
 
   test('arm binder count must match payload arity', () => {
     expect(() => elabSrc(`
-      program X(v: signal) -> (out: signal) {
+      program X(v: float) -> (out: float) {
         enum E { Two(a: float, b: float) }
         out = match v { Two { a: x } => x }
       }
@@ -411,8 +411,8 @@ describe('elaborator — match', () => {
 describe('elaborator — instances + nested programs', () => {
   test('instance refs the nested program decl by reference; ports keyed by InputDecl', () => {
     const p = elabSrc(`
-      program Outer() -> (out: signal) {
-        program Inner(x: signal = 0) -> (y: signal) { y = x }
+      program Outer() -> (out: float) {
+        program Inner(x: float = 0) -> (y: float) { y = x }
         i = Inner(x: 1)
         out = i.y
       }
@@ -437,7 +437,7 @@ describe('elaborator — instances + nested programs', () => {
 
   test('instance with unknown program type errors', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         osc = NotDeclared(freq: 440)
         out = 0
       }
@@ -446,8 +446,8 @@ describe('elaborator — instances + nested programs', () => {
 
   test('instance with unknown input port errors with helpful list', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
-        program P(a: signal) -> (out: signal) { out = a }
+      program X() -> (out: float) {
+        program P(a: float) -> (out: float) { out = a }
         i = P(b: 1)
         out = i.out
       }
@@ -456,8 +456,8 @@ describe('elaborator — instances + nested programs', () => {
 
   test('instance with unknown output port errors', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
-        program P() -> (y: signal) { y = 0 }
+      program X() -> (out: float) {
+        program P() -> (y: float) { y = 0 }
         i = P()
         out = i.z
       }
@@ -466,8 +466,8 @@ describe('elaborator — instances + nested programs', () => {
 
   test('type-args resolve to the program type\'s TypeParamDecl', () => {
     const p = elabSrc(`
-      program Outer() -> (out: signal) {
-        program Inner<N: int = 4>() -> (y: signal) { y = N }
+      program Outer() -> (out: float) {
+        program Inner<N: int = 4>() -> (y: float) { y = N }
         i = Inner<N=8>()
         out = i.y
       }
@@ -486,7 +486,7 @@ describe('elaborator — instances + nested programs', () => {
 
 describe('elaborator — output assigns', () => {
   test('outputAssign target is the actual OutputDecl', () => {
-    const p = elabSrc('program X() -> (out: signal) { out = 1 }')
+    const p = elabSrc('program X() -> (out: float) { out = 1 }')
     const out = p.body.assigns[0] as OutputAssign
     if (out.target !== null && typeof out.target === 'object' && 'kind' in out.target) {
       throw new Error('expected OutputDecl, got dac sentinel')
@@ -497,7 +497,7 @@ describe('elaborator — output assigns', () => {
   test('dac.out target is the dac sentinel', () => {
     const p = elabSrc(`
       program Patch() {
-        program Osc() -> (out: signal) { out = 0 }
+        program Osc() -> (out: float) { out = 0 }
         o = Osc()
         dac.out = o.out
       }
@@ -512,7 +512,7 @@ describe('elaborator — output assigns', () => {
 
   test('outputAssign to undeclared output errors', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         unknown = 0
         out = 0
       }
@@ -527,7 +527,7 @@ describe('elaborator — output assigns', () => {
 describe('elaborator — type defs', () => {
   test('alias type-def: base resolves to ScalarKind', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         type Bipolar = float
         out = 0
       }
@@ -539,7 +539,7 @@ describe('elaborator — type defs', () => {
 
   test('struct type-def: fields preserve scalar kinds', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         struct Pair { a: float, b: int }
         out = 0
       }
@@ -552,7 +552,7 @@ describe('elaborator — type defs', () => {
 
   test('sum variant carries back-pointer to parent type', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         enum Mode { On, Off }
         out = 0
       }
@@ -564,7 +564,7 @@ describe('elaborator — type defs', () => {
 
   test('variant name conflict across sum types errors', () => {
     expect(() => elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         enum A { Same, A1 }
         enum B { Same, B1 }
         out = 0
@@ -579,14 +579,14 @@ describe('elaborator — type defs', () => {
 
 describe('elaborator — port types', () => {
   test('scalar port type resolves to {kind:scalar, scalar}', () => {
-    const p = elabSrc('program X(x: float) -> (out: signal) { out = x }')
+    const p = elabSrc('program X(x: float) -> (out: float) { out = x }')
     const portType = p.ports.inputs[0].type
     expect(portType).toEqual({ kind: 'scalar', scalar: 'float' })
   })
 
   test('array port type with type-param shape dim resolves dim to TypeParamDecl', () => {
     const p = elabSrc(`
-      program X<N: int = 4>(buf: float[N]) -> (out: signal) { out = 0 }
+      program X<N: int = 4>(buf: float[N]) -> (out: float) { out = 0 }
     `)
     const inputType = p.ports.inputs[0].type
     if (!inputType || inputType.kind !== 'array') throw new Error('expected array')
@@ -595,7 +595,7 @@ describe('elaborator — port types', () => {
 
   test('shape dim references undeclared type-param errors', () => {
     expect(() => elabSrc(`
-      program X(buf: float[K]) -> (out: signal) { out = 0 }
+      program X(buf: float[K]) -> (out: float) { out = 0 }
     `)).toThrow(/'K' is not a declared type-param/)
   })
 })
@@ -607,7 +607,7 @@ describe('elaborator — port types', () => {
 describe('elaborator — graph integrity', () => {
   test('a single declaration produces exactly one decl object', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) {
+      program X() -> (out: float) {
         reg s: float = 0
         out = s + s + s
         next s = s
@@ -629,7 +629,7 @@ describe('elaborator — graph integrity', () => {
 
   test('elaborating the same source twice produces structurally identical graphs', () => {
     const src = `
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         reg s: float = 0
         out = x + s
         next s = s + 1
@@ -651,7 +651,7 @@ describe('elaborator — graph integrity', () => {
 
   test('feedback through a register is a graph cycle (decl referenced via next)', () => {
     const p = elabSrc(`
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         reg s: float = 0
         out = s
         next s = s + x
@@ -677,12 +677,12 @@ describe('elaborator — external program resolver', () => {
     // Elaborate Inner first, then feed it to a sibling program that
     // instantiates it without declaring it as a nested programDecl.
     const inner = elabSrc(`
-      program Inner(x: signal = 0) -> (y: signal) { y = x }
+      program Inner(x: float = 0) -> (y: float) { y = x }
     `)
     const resolver: ExternalProgramResolver = name =>
       name === 'Inner' ? inner : undefined
     const outer = elaborate(parseProgram(`
-      program Outer() -> (out: signal) {
+      program Outer() -> (out: float) {
         i = Inner(x: 1)
         out = i.y
       }
@@ -697,7 +697,7 @@ describe('elaborator — external program resolver', () => {
   test('resolver returns undefined → instance error mentions resolver', () => {
     const resolver: ExternalProgramResolver = () => undefined
     expect(() => elaborate(parseProgram(`
-      program Outer() -> (out: signal) {
+      program Outer() -> (out: float) {
         i = Missing(x: 1)
         out = i.y
       }
@@ -706,7 +706,7 @@ describe('elaborator — external program resolver', () => {
 
   test('without resolver, external instance still errors as before', () => {
     expect(() => elabSrc(`
-      program Outer() -> (out: signal) {
+      program Outer() -> (out: float) {
         i = NotDeclared()
         out = 0
       }
@@ -717,13 +717,13 @@ describe('elaborator — external program resolver', () => {
     // The inner program also gets the same resolver — instances inside
     // a nested programDecl can reach external program types.
     const sib = elabSrc(`
-      program Sib(x: signal = 0) -> (y: signal) { y = x }
+      program Sib(x: float = 0) -> (y: float) { y = x }
     `)
     const resolver: ExternalProgramResolver = name =>
       name === 'Sib' ? sib : undefined
     const outer = elaborate(parseProgram(`
-      program Outer() -> (out: signal) {
-        program Wrap(z: signal = 0) -> (w: signal) {
+      program Outer() -> (out: float) {
+        program Wrap(z: float = 0) -> (w: float) {
           inner = Sib(x: z)
           w = inner.y
         }
@@ -746,7 +746,7 @@ describe('elaborator — sequential let* binding', () => {
     // This shape is used by stdlib (Tanh, Exp, Sin); the older parallel
     // semantics rejected it as `unknown name 'c'`.
     const p = elabSrc(`
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         out = let { c: x + 1; c2: c * c } in c2
       }
     `)
@@ -763,7 +763,7 @@ describe('elaborator — sequential let* binding', () => {
 
   test('the body sees every binder in the let block', () => {
     const p = elabSrc(`
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         out = let { a: x; b: a + 1; c: b + 1 } in a + b + c
       }
     `)
@@ -777,7 +777,7 @@ describe('elaborator — sequential let* binding', () => {
     // Construct a scenario where the same name is used in nested lets
     // and verify the inner binder is distinct from the outer.
     const p = elabSrc(`
-      program X(x: signal) -> (out: signal) {
+      program X(x: float) -> (out: float) {
         out = let { a: x } in let { a: a + 1 } in a
       }
     `)
@@ -803,7 +803,7 @@ describe('elaborator — sequential let* binding', () => {
 describe('elaborator — new builtin calls', () => {
   test('camelCase sampleRate / sampleIndex resolve to the same nodes as snake_case', () => {
     const p = elabSrc(`
-      program X() -> (out: signal) { out = sampleRate() + sampleIndex() }
+      program X() -> (out: float) { out = sampleRate() + sampleIndex() }
     `)
     const expr = (p.body.assigns[0] as OutputAssign).expr as BinaryOpNode
     expect(expr.op).toBe('add')
@@ -813,7 +813,7 @@ describe('elaborator — new builtin calls', () => {
 
   test('floatExponent (camelCase) resolves to UnaryOpNode', () => {
     const p = elabSrc(`
-      program X(x: signal) -> (out: signal) { out = floatExponent(x) }
+      program X(x: float) -> (out: float) { out = floatExponent(x) }
     `)
     const expr = (p.body.assigns[0] as OutputAssign).expr as { op: string }
     expect(expr.op).toBe('floatExponent')
@@ -821,7 +821,7 @@ describe('elaborator — new builtin calls', () => {
 
   test('pow / floorDiv / ldexp resolve to BinaryOpNodes', () => {
     const p = elabSrc(`
-      program X(a: signal, b: signal) -> (out: signal) {
+      program X(a: float, b: float) -> (out: float) {
         out = pow(a, b) + floorDiv(a, b) + ldexp(a, b)
       }
     `)
@@ -866,7 +866,7 @@ describe('elaborator — new builtin calls', () => {
 
   test('binary builtin wrong arity errors', () => {
     expect(() => elabSrc(`
-      program X(a: signal) -> (out: signal) { out = pow(a) }
+      program X(a: float) -> (out: float) { out = pow(a) }
     `)).toThrow(/'pow' takes 2 arguments/)
   })
 })

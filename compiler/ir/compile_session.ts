@@ -68,6 +68,10 @@ interface MaterializeContext {
   /** ParamDecl per param/trigger name. Created lazily as wiring expressions
    *  reference them; same identity reused across all references. */
   paramDecls: Map<string, ParamDecl>
+  /** Identity memoization: shared session ExprNode objects produce shared
+   *  ResolvedExpr objects so downstream CSE memo (in resolvedToSlotted +
+   *  emit_numeric) treats them as identical. */
+  exprMemo: WeakMap<object, ResolvedExpr>
   /** Direct lookup into the session for type-resolution + port lookup. */
   session: SessionState
 }
@@ -76,6 +80,7 @@ function materializeSession(session: SessionState): ResolvedProgram {
   const ctx: MaterializeContext = {
     instanceDecls: new Map(),
     paramDecls:    new Map(),
+    exprMemo:      new WeakMap(),
     session,
   }
 
@@ -256,11 +261,18 @@ function translateExpr(expr: ExprNode, ctx: MaterializeContext): ResolvedExpr {
   if (typeof expr === 'number')  return expr
   if (typeof expr === 'boolean') return expr
   if (Array.isArray(expr)) {
-    return expr.map(e => translateExpr(e, ctx)) as ResolvedExpr
+    const cached = ctx.exprMemo.get(expr)
+    if (cached !== undefined) return cached
+    const out = expr.map(e => translateExpr(e, ctx)) as ResolvedExpr
+    ctx.exprMemo.set(expr, out)
+    return out
   }
   if (typeof expr !== 'object' || expr === null) {
     throw new Error(`compileSession: invalid expr value: ${JSON.stringify(expr)}`)
   }
+
+  const cached = ctx.exprMemo.get(expr)
+  if (cached !== undefined) return cached
 
   const obj = expr as Record<string, unknown>
   const op = obj.op
@@ -268,6 +280,16 @@ function translateExpr(expr: ExprNode, ctx: MaterializeContext): ResolvedExpr {
     throw new Error(`compileSession: expression missing op tag: ${JSON.stringify(expr).slice(0, 100)}`)
   }
 
+  const out = translateOpNode(obj, op, ctx)
+  ctx.exprMemo.set(expr, out)
+  return out
+}
+
+function translateOpNode(
+  obj: Record<string, unknown>,
+  op: string,
+  ctx: MaterializeContext,
+): ResolvedExpr {
   // ── Reference ops ─────────────────────────────────────────────────
   if (op === 'ref') {
     const instName = obj.instance as string

@@ -16,6 +16,12 @@ import { makeSession, resolveProgramType } from './session'
 import { loadStdlib } from './program'
 import { interpretSession } from './interpret_resolved'
 
+// One shared session for the whole suite — cuts ~400× repeated stdlib
+// loads down to one. evalProgram resets the per-call state (instance
+// + wiring + graph outputs); the type registry survives.
+const sharedSession = makeSession(1)
+loadStdlib(sharedSession)
+
 /**
  * Evaluate `programName(inputs…) → outputName` at given numeric input values.
  *
@@ -28,19 +34,18 @@ function evalProgram(
   inputs: Record<string, number>,
   outputName = 'out',
 ): number {
-  const session = makeSession(1)
-  try {
-    loadStdlib(session)
-    const { type } = resolveProgramType(session, programName, undefined, undefined)
-    const inst = type.instantiateAs('it', { baseTypeName: programName })
-    session.instanceRegistry.set('it', inst)
-    for (const [k, v] of Object.entries(inputs)) session.inputExprNodes.set(`it:${k}`, v)
-    session.graphOutputs.push({ instance: 'it', output: outputName })
-    const buf = interpretSession(session, 1)
-    return buf[0] * 20.0   // undo interpretSession's /20 audio mix scaling
-  } finally {
-    session.graph.dispose()
-  }
+  // Clear per-call state. typeRegistry / resolvedRegistry / etc. survive.
+  sharedSession.instanceRegistry.clear()
+  sharedSession.inputExprNodes.clear()
+  sharedSession.graphOutputs.length = 0
+
+  const { type } = resolveProgramType(sharedSession, programName, undefined, undefined)
+  const inst = type.instantiateAs('it', { baseTypeName: programName })
+  sharedSession.instanceRegistry.set('it', inst)
+  for (const [k, v] of Object.entries(inputs)) sharedSession.inputExprNodes.set(`it:${k}`, v)
+  sharedSession.graphOutputs.push({ instance: 'it', output: outputName })
+  const buf = interpretSession(sharedSession, 1)
+  return buf[0] * 20.0   // undo interpretSession's /20 audio mix scaling
 }
 
 /** Max absolute error of `ours(x)` vs `ref(x)` across a linear sweep. */

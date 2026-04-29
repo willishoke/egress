@@ -68,16 +68,7 @@ export function resolvedToProgramType(prog: ResolvedProgram): ProgramType {
     outputPortTypes,
     registerNames,
     registerPortTypes,
-    registerInitValues: [],
-    sampleRate: 44100.0,
     rawInputDefaults,
-    inputDefaults: new Array(prog.ports.inputs.length).fill(null),
-    delayInitValues: [],
-    outputExprNodes: [],
-    registerExprNodes: [],
-    delayUpdateNodes: [],
-    nestedCalls: [],
-    breaksCycles: false,
   }
 
   return new ProgramType(def)

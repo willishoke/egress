@@ -27,7 +27,11 @@
  *  • `[null, null]` → expr (no-op)
  */
 
-import type { ExprNode, ProgramNode, ProgramPort, ProgramPortSpec, PortTypeDecl, NameRefNode } from './nodes.js'
+import type {
+  ExprNode, ProgramNode, ProgramPort, ProgramPortSpec, PortTypeDecl, NameRefNode,
+  CallNode, BinaryOpNode,
+} from './nodes.js'
+import { nameRef } from './nodes.js'
 
 /** Local copy of the elaborator's nameRef predicate — `parse/nodes.ts`
  *  doesn't export one and we don't want a layering dep on the elaborator
@@ -74,17 +78,19 @@ function aliasBounds(t: PortTypeDecl | undefined): Bounds | null {
 function wrapWithBound(expr: ExprNode, bounds: Bounds): ExprNode {
   const [lo, hi] = bounds
   if (alreadyWrapped(expr, bounds)) return expr
-  const callRef = (name: string) => ({ op: 'nameRef', name })
   if (lo !== null && hi !== null) {
-    return { op: 'call', callee: callRef('clamp'), args: [expr, lo, hi] }
+    const node: CallNode = { op: 'call', callee: nameRef('clamp'), args: [expr, lo, hi] }
+    return node
   }
   if (lo !== null) {
-    const cond = { op: 'gt', args: [expr, lo] }
-    return { op: 'call', callee: callRef('select'), args: [cond, expr, lo] }
+    const cond: BinaryOpNode = { op: 'gt', args: [expr, lo] }
+    const node: CallNode = { op: 'call', callee: nameRef('select'), args: [cond, expr, lo] }
+    return node
   }
   if (hi !== null) {
-    const cond = { op: 'lt', args: [expr, hi] }
-    return { op: 'call', callee: callRef('select'), args: [cond, expr, hi] }
+    const cond: BinaryOpNode = { op: 'lt', args: [expr, hi] }
+    const node: CallNode = { op: 'call', callee: nameRef('select'), args: [cond, expr, hi] }
+    return node
   }
   return expr  // [null, null] — no enforcement to insert
 }
@@ -96,7 +102,7 @@ function wrapWithBound(expr: ExprNode, bounds: Bounds): ExprNode {
  *  parse round-trips converge. */
 function alreadyWrapped(expr: ExprNode, bounds: Bounds): boolean {
   if (typeof expr !== 'object' || expr === null || Array.isArray(expr)) return false
-  const e = expr as Record<string, unknown>
+  const e = expr as unknown as Record<string, unknown>
   const args = e.args as unknown[] | undefined
   if (!Array.isArray(args)) return false
 
@@ -132,11 +138,8 @@ export function lowerBoundsToClamps(prog: ProgramNode): ProgramNode {
   // carry an inner `program: ProgramNode`. The outer pass operates on
   // `prog` afterward so its body sees lowered nested forms.
   for (const decl of prog.body.decls ?? []) {
-    if (typeof decl === 'object' && decl !== null && !Array.isArray(decl)) {
-      const d = decl as Record<string, unknown>
-      if (d.op === 'programDecl' && d.program) {
-        lowerBoundsToClamps(d.program as ProgramNode)
-      }
+    if (decl.op === 'programDecl' && decl.program) {
+      lowerBoundsToClamps(decl.program)
     }
   }
 
@@ -167,12 +170,10 @@ export function lowerBoundsToClamps(prog: ProgramNode): ProgramNode {
 
   if (outputBoundsByName.size > 0) {
     for (const assign of (prog.body.assigns ?? [])) {
-      if (typeof assign !== 'object' || assign === null || Array.isArray(assign)) continue
-      const a = assign as Record<string, unknown>
-      if (a.op !== 'outputAssign' || typeof a.name !== 'string') continue
-      const bounds = outputBoundsByName.get(a.name)
+      if (assign.op !== 'outputAssign') continue
+      const bounds = outputBoundsByName.get(assign.name)
       if (!bounds) continue
-      a.expr = wrapWithBound(a.expr as ExprNode, bounds)
+      assign.expr = wrapWithBound(assign.expr, bounds)
     }
   }
 

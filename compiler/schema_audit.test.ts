@@ -26,7 +26,6 @@ const STDLIB_DIR = join(__dirname, '..', 'stdlib')
 const GRANDFATHERED_AUDIO_OUTPUTS: ReadonlySet<string> = new Set([
   '31tet_otonal_seq.json',
   'acid_noise.json',
-  'arp_transpose.json',
   'bubble_cloud.json',
   'bubble_drip.json',
   'compressor_harmonics.json',

@@ -40,6 +40,7 @@ import type {
   PortType as ResolvedPortType,
   ScalarKind, AliasTypeDef,
 } from './nodes.js'
+import { buildSlotMaps, type Slots } from './slots.js'
 import type { ExprNode } from '../expr.js'
 import type { SessionState } from '../session.js'
 import { coerce, SignalExpr } from '../expr.js'
@@ -60,17 +61,6 @@ import {
 } from '../term.js'
 
 // ─────────────────────────────────────────────────────────────
-// Slot tables — built once per `loadProgramDefFromResolved` call
-// ─────────────────────────────────────────────────────────────
-
-interface Slots {
-  inputs:    Map<InputDecl, number>
-  regs:      Map<RegDecl, number>
-  delays:    Map<DelayDecl, number>
-  instances: Map<InstanceDecl, number>
-}
-
-// ─────────────────────────────────────────────────────────────
 // Public entry: ResolvedProgram → ProgramType
 // ─────────────────────────────────────────────────────────────
 
@@ -84,28 +74,9 @@ export function loadProgramDefFromResolved(
   prog: ResolvedProgram,
   _session: LoadSession,
 ): ProgramType {
-  // ── Allocate slots in declaration order ──
-  const slots: Slots = {
-    inputs:    new Map(),
-    regs:      new Map(),
-    delays:    new Map(),
-    instances: new Map(),
-  }
-  prog.ports.inputs.forEach((d, i) => slots.inputs.set(d, i))
-
-  const regDecls:      RegDecl[]      = []
-  const delayDecls:    DelayDecl[]    = []
-  const instanceDecls: InstanceDecl[] = []
-
-  for (const decl of prog.body.decls) {
-    switch (decl.op) {
-      case 'regDecl':      slots.regs.set(decl, regDecls.length);       regDecls.push(decl); break
-      case 'delayDecl':    slots.delays.set(decl, delayDecls.length);   delayDecls.push(decl); break
-      case 'instanceDecl': slots.instances.set(decl, instanceDecls.length); instanceDecls.push(decl); break
-      case 'paramDecl':    /* session-scoped, not part of ProgramDef */ break
-      case 'programDecl':  /* registered by loadProgramAsType in legacy; nothing to do */ break
-    }
-  }
+  // Allocate slot indices for every decl. Shared with `compileResolved`
+  // (Phase D D1) so both paths emit byte-equal `tropical_plan_4`.
+  const { regDecls, delayDecls, instanceDecls, ...slots } = buildSlotMaps(prog)
 
   // ── Names and port types ──
   const inputNames    = prog.ports.inputs.map(d => d.name)

@@ -8,7 +8,8 @@
 brew install <tap>/tropical
 ```
 
-Once installed, the `libtropical.dylib` and MCP server will be available system-wide. No additional setup required.
+Once installed, `libtropical.dylib` and the MCP server will be
+available system-wide.
 
 ## From source
 
@@ -16,11 +17,13 @@ Once installed, the `libtropical.dylib` and MCP server will be available system-
 
 | Dependency | Version | macOS | Linux |
 |-----------|---------|-------|-------|
-| LLVM | >= 15 | `brew install llvm` | See [LLVM apt](https://apt.llvm.org/) or your distro's package manager |
-| CMake | >= 3.20 | `brew install cmake` | `apt install cmake` |
-| Bun | >= 1.0 | `brew install oven-sh/bun/bun` | `curl -fsSL https://bun.sh/install \| bash` |
+| LLVM | ≥ 19 | `brew install llvm` | See [LLVM apt](https://apt.llvm.org/) or your distro's package manager |
+| CMake | ≥ 3.20 | `brew install cmake` | `apt install cmake` |
+| Bun | ≥ 1.3 | `brew install oven-sh/bun/bun` | `curl -fsSL https://bun.sh/install \| bash` |
 
-On macOS, the build expects LLVM at `/opt/homebrew/opt/llvm`. If yours is elsewhere, set `LLVM_DIR`:
+`CMakeLists.txt` requires LLVM ≥ 19 (`getOrInsertDeclaration` API);
+CI builds against LLVM 20. On macOS the build expects LLVM at
+`/opt/homebrew/opt/llvm`; if yours is elsewhere, set `LLVM_DIR`:
 
 ```bash
 make build LLVM_DIR=/path/to/llvm/lib/cmake/llvm
@@ -34,20 +37,51 @@ bun install
 make build
 ```
 
-This produces `build/libtropical.dylib` (macOS) or `build/libtropical.so` (Linux).
+This produces `build/libtropical.dylib` (macOS) or
+`build/libtropical.so` (Linux).
 
-### Verify
+### Verifying the install
+
+Four checks; the first three are required, the fourth (stdlib audit)
+is run by `make validate`.
 
 ```bash
-cmake --build build -j4 && ctest --test-dir build
+cmake --build build -j4 && ctest --test-dir build   # C++ tests (JIT + C API, no audio device)
+bun test                                              # TS tests (compiler + parse + ir + WASM equiv)
+bunx tsc --noEmit                                     # type-check the TS pipeline
+bun run scripts/validate_stdlib.ts                    # parse, elaborate, lower every stdlib/*.trop
 ```
 
-All tests should pass. Tests exercise the JIT and C API without an audio device.
+`bun test` exercises three equivalence gates that fix the meaning of
+the strata pipeline: `compile_session_equiv` (full pipeline → stable
+`tropical_plan_4`), `jit_interp_equiv` (JIT vs. pure-TS interpreter),
+and `wasm_vs_jit_equiv` (WASM emit vs. JIT). All three load
+`build/libtropical.dylib` via koffi, so `make build` must come first.
+
+`make validate` runs the C++ tests, the TS tests, and the stdlib
+audit in one go.
+
+### Web demo (optional)
+
+The browser backend has no extra prerequisites — Bun is sufficient.
+The build pipeline lives in `web/`:
+
+```bash
+bun web/build_patches.ts    # precompile curated patches → web/dist/patches/*.plan.json
+bun web/build.ts            # full demo bundle (worklet + main app + index.html → web/dist/)
+bun web/dev.ts              # dev server with the COOP/COEP headers SAB requires
+```
+
+The browser demo loads the precompiled plans, emits WASM at runtime
+(`compiler/emit_wasm.ts`), and runs the kernel inside an
+AudioWorklet. See `web/CLAUDE.md` for details.
 
 ### Platform notes
 
-**macOS** — Primary platform. Audio output via CoreAudio. Tested on Apple Silicon and Intel.
+**macOS** — Primary platform. Audio output via CoreAudio. Tested on
+Apple Silicon and Intel.
 
-**Linux** — Builds and passes tests. Audio output via ALSA (requires `libasound2-dev` or equivalent). Less tested than macOS.
+**Linux** — Builds and passes tests. Audio output via ALSA (requires
+`libasound2-dev` or equivalent). Less tested than macOS.
 
 **Windows** — Not currently supported.

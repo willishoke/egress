@@ -100,7 +100,7 @@ Stage 12: Audio output           RtAudio callback
 
 ### Module type coverage
 
-19 built-in module types exist as `stdlib/*.json` (see the compiler/CLAUDE.md stdlib table for the full list). Integration tests exercise only a handful (e.g. **VCA, Clock**, plus an inline test oscillator that instantiates **Sin**) through the full pipeline with numerical output. All 19 load and flatten successfully, but most have no test that verifies numerically-correct audio.
+31 built-in module types exist as `stdlib/*.trop` (see `stdlib/README.md` for the full catalog). Integration tests exercise only a handful (e.g. **VCA, Clock**, plus an inline test oscillator that instantiates **Sin**) through the full pipeline with numerical output. All 31 parse, elaborate, and lower successfully, but most have no test that verifies numerically-correct audio.
 
 Untested numerically: most filters, delays, and effects — Tanh, Exp, Log, Pow, OnePole, LadderFilter, AllpassDelay, CombDelay, Phaser/Phaser16, BitCrusher, NoiseLFSR, Delay, SoftClip, CrossFade.
 

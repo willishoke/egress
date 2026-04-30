@@ -12,16 +12,75 @@ import { broadcastShapes, type ScalarKind } from './term.js'
 
 // ---------- ExprNode (JSON-serializable expression tree) ----------
 
+/** Closed enumeration of every op tag the `ExprNode` JSON tree may carry.
+ *  The narrow boundaries this Phase D D4 step closes:
+ *
+ *  - **Op-tag drift**: adding a new op forces touching this list,
+ *    surfacing the question "is this allowed at the MCP wire-format
+ *    boundary?" at type-checking time rather than hidden in walker
+ *    coverage gaps.
+ *  - **Stale forms**: dropping an op from this list immediately
+ *    deletes every site that constructs or matches it. Useful when
+ *    retiring a parse-time form whose lowering pass landed.
+ *
+ *  This list includes parse-time forms (combinators, ADTs, function/
+ *  call) because expr.ts's SignalExpr builders construct them and the
+ *  parser produces them. They flow through the strata pipeline
+ *  (lowered by `arrayLower` / `sumLower`) before reaching the JIT
+ *  emitter; the MCP runtime validator (`validateExpr` post PR #134)
+ *  rejects combinators on the wiring surface, but the type system
+ *  doesn't enforce that — that's a separate, narrower constraint
+ *  validated at runtime where it matters.
+ *
+ *  Conceptually: `WireFormatOp` is the universe of "ExprNode op tags
+ *  the codebase may legally produce." It's a *closed* set — no string
+ *  shenanigans. Extending it requires editing this declaration. */
+export type WireFormatOp =
+  // Arithmetic / comparison / bitwise / logical (binary)
+  | 'add' | 'sub' | 'mul' | 'div' | 'mod' | 'floorDiv' | 'ldexp' | 'pow'
+  | 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
+  | 'bitAnd' | 'bitOr' | 'bitXor' | 'lshift' | 'rshift'
+  | 'and' | 'or'
+  // Unary
+  | 'neg' | 'abs' | 'sqrt' | 'floor' | 'ceil' | 'round'
+  | 'floatExponent' | 'not' | 'bitNot'
+  | 'toInt' | 'toBool' | 'toFloat'
+  // Ternary / array element ops
+  | 'select' | 'clamp' | 'arraySet' | 'index'
+  // Array literals + lowered shape ops
+  | 'array' | 'arrayPack' | 'arrayLiteral' | 'matrix'
+  | 'zeros' | 'ones' | 'fill'
+  | 'reshape' | 'transpose' | 'slice' | 'reduce' | 'broadcastTo' | 'map'
+  | 'matmul'
+  // Wiring + leaves
+  | 'ref' | 'call' | 'delay' | 'sourceTag'
+  | 'input' | 'reg' | 'delayRef' | 'delayValue'
+  | 'nestedOut' | 'nestedOutput' | 'binding' | 'typeParam'
+  | 'sampleRate' | 'sampleIndex'
+  | 'param' | 'trigger' | 'paramExpr' | 'triggerParamExpr'
+  | 'smoothedParam' | 'triggerParam'
+  | 'const'
+  // Combinators + ADTs (parse-time; flow through strata, validateExpr
+  // rejects them at the MCP runtime boundary).
+  | 'let' | 'fold' | 'scan' | 'generate' | 'iterate' | 'chain'
+  | 'map2' | 'zipWith'
+  | 'tag' | 'match'
+  | 'function' | 'strConcat' | 'generateDecls'
+  // Program-shape ops (define_program / merge / load JSON ingest)
+  | 'program' | 'block'
+  | 'regDecl' | 'delayDecl' | 'paramDecl' | 'instanceDecl' | 'programDecl'
+  | 'outputAssign' | 'nextUpdate'
+
 /** An expression node — bare scalar, inline array, or a named op object.
- *  The op variant is currently a bag of fields; see ExprOpNodeStrict below
- *  for the closed parametric-arity discriminated union being phased in.
- *  Once walkers are migrated to use ExprOpNodeStrict, this type will be
- *  replaced by `number | boolean | ExprNode[] | ExprOpNodeStrict`. */
+ *  The op variant carries a closed `WireFormatOp` discriminator (Phase D
+ *  D4 narrow). Extra fields per op are still loosely typed —
+ *  `ExprOpNodeStrict` below is the parametric-arity discriminated union
+ *  for code that needs structural narrowing. */
 export type ExprNode =
   | number
   | boolean
   | ExprNode[]
-  | { op: string; [key: string]: unknown }
+  | { op: WireFormatOp; [key: string]: unknown }
 
 // ─────────────────────────────────────────────────────────────
 // Closed parametric-arity discriminated union (Phase 1)
@@ -478,13 +537,13 @@ function propagateBinaryShape(l: SignalExpr, r: SignalExpr): number[] | undefine
   return undefined
 }
 
-function binary(opName: string, lhs: ExprCoercible, rhs: ExprCoercible): SignalExpr {
+function binary(opName: BinaryTag, lhs: ExprCoercible, rhs: ExprCoercible): SignalExpr {
   const l = coerce(lhs)
   const r = coerce(rhs)
   return SignalExpr.fromNode({ op: opName, args: [l._node, r._node] }, propagateBinaryShape(l, r))
 }
 
-function unary(opName: string, operand: ExprCoercible): SignalExpr {
+function unary(opName: UnaryTag, operand: ExprCoercible): SignalExpr {
   const o = coerce(operand)
   return SignalExpr.fromNode({ op: opName, args: [o._node] }, o.shape)
 }
@@ -617,7 +676,8 @@ export function reshape(arr: ExprCoercible, newShape: number[]): SignalExpr {
 
 /** Transpose a 2D array (swap axes). */
 export function transpose(arr: ExprCoercible): SignalExpr {
-  return unary('transpose', arr)
+  const a = coerce(arr)
+  return SignalExpr.fromNode({ op: 'transpose', args: [a._node] }, a.shape)
 }
 
 /**
@@ -676,7 +736,7 @@ export function tag(
   variant: string,
   payload?: Record<string, ExprCoercible>,
 ): SignalExpr {
-  const node: { op: string; type: string; variant: string; payload?: Record<string, ExprNode> } = {
+  const node: { op: 'tag'; type: string; variant: string; payload?: Record<string, ExprNode> } = {
     op: 'tag', type: typeName, variant,
   }
   if (payload !== undefined) {

@@ -12,7 +12,7 @@
  *     WASM type to load/store.
  */
 
-import type { FlatProgram } from './emit_numeric.js'
+import type { FlatProgram } from './ir/emit_resolved'
 
 export type WasmLayout = {
   /** bytes */

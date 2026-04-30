@@ -13,11 +13,10 @@
  * metadata-only ProgramDef from the ResolvedProgram and stash it.
  */
 
-import type { ResolvedProgram, RegDecl, AliasTypeDef, ScalarKind, PortType as ResolvedPortType } from './nodes.js'
+import type { ResolvedProgram, ResolvedExpr, RegDecl, AliasTypeDef, ScalarKind, PortType as ResolvedPortType } from './nodes.js'
 import type { ExprNode } from '../expr.js'
 import { ProgramType, type ProgramDef } from '../program_types.js'
 import { Float, Int, Bool, ArrayType, type PortType as LegacyPortType } from '../term.js'
-import { resolvedToSlotted } from './lower_to_exprnode.js'
 import { buildSlotMaps } from './slots.js'
 
 /** Build a ProgramType from a post-strata ResolvedProgram. The ProgramDef
@@ -46,18 +45,15 @@ export function resolvedToProgramType(prog: ResolvedProgram): ProgramType {
     }
   }
 
-  // rawInputDefaults: for each input port with a `default`, lower it to
-  // an ExprNode so consumers can splice it into session.inputExprNodes.
-  // The lowering uses an empty slots table because input defaults today
-  // are simple literal expressions — they don't reference instance
-  // outputs or other inner decls. If a complex default ever appeared,
-  // resolvedToSlotted would throw on the missing slot, surfacing the
-  // problem at compile time.
-  const emptySlots = { inputs: new Map(), regs: new Map(), delays: new Map(), instances: new Map() }
-  const memo = new WeakMap<object, ExprNode>()
+  // rawInputDefaults: input ports with declared default values, lowered
+  // to MCP wire-format ExprNode so `loadProgramAsSession` can splice
+  // them into `session.inputExprNodes` for unwired ports. Defaults are
+  // simple literals in practice (numbers, booleans, occasionally
+  // arrays of those); a more complex form here is a future-feature
+  // signal that this lowering needs extension.
   const rawInputDefaults: Record<string, ExprNode> = {}
   for (const d of prog.ports.inputs) {
-    if (d.default !== undefined) rawInputDefaults[d.name] = resolvedToSlotted(d.default, emptySlots, memo)
+    if (d.default !== undefined) rawInputDefaults[d.name] = literalDefault(d.default, d.name)
   }
 
   const def: ProgramDef = {
@@ -109,4 +105,47 @@ function regPortType(d: RegDecl): LegacyPortType | undefined {
   if (d.type === undefined) return undefined
   if (typeof d.type === 'string') return scalarToLegacy(d.type)
   return scalarToLegacy((d.type as AliasTypeDef).base)
+}
+
+/** Lower a `ResolvedExpr` input-default to the MCP wire-format `ExprNode`
+ *  shape that gets spliced into `session.inputExprNodes`. Defaults are
+ *  ref-free (they don't read other instances' outputs or program-internal
+ *  decls), so this walker only needs to handle literals + arithmetic +
+ *  clamp/select. The bounds-lowering pass (`parse/lower_bounds.ts`) wraps
+ *  bounded defaults in `clamp` ops, which is why we accept that op here. */
+function literalDefault(expr: ResolvedExpr, portName: string): ExprNode {
+  if (typeof expr === 'number' || typeof expr === 'boolean') return expr
+  if (Array.isArray(expr)) return expr.map(e => literalDefault(e, portName))
+  if (typeof expr !== 'object' || expr === null) {
+    throw new Error(`resolvedToProgramType: input '${portName}' default has unexpected shape`)
+  }
+  const obj = expr as { op: string; args?: unknown[]; count?: ResolvedExpr }
+  // Pass-through ops that share the resolved-IR and MCP wire-format shape.
+  // Walks args recursively. A ref-bearing op or combinator surfacing here
+  // is a strata bug — defaults should be pure literal expressions.
+  switch (obj.op) {
+    case 'add': case 'sub': case 'mul': case 'div': case 'mod':
+    case 'pow': case 'floorDiv': case 'ldexp':
+    case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
+    case 'and': case 'or':
+    case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
+    case 'neg': case 'not': case 'bitNot': case 'sqrt': case 'abs':
+    case 'floor': case 'ceil': case 'round': case 'floatExponent':
+    case 'toInt': case 'toBool': case 'toFloat':
+    case 'clamp': case 'select': case 'index': case 'arraySet': {
+      const args = (obj.args ?? []) as ResolvedExpr[]
+      return { op: obj.op, args: args.map(a => literalDefault(a, portName)) }
+    }
+    case 'sampleRate': case 'sampleIndex':
+      return { op: obj.op }
+    case 'zeros': {
+      // Pass-through with the resolved shape's `count` field.
+      const c = literalDefault(obj.count as ResolvedExpr, portName)
+      return { op: 'zeros', count: c }
+    }
+  }
+  throw new Error(
+    `resolvedToProgramType: input '${portName}' default has op '${obj.op}' that's not a literal-class form; ` +
+    `defaults shouldn't reference decls or run combinators`,
+  )
 }

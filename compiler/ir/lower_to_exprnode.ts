@@ -21,6 +21,10 @@ export interface Slots {
   regs:      Map<RegDecl, number>
   delays:    Map<DelayDecl, number>
   instances: Map<InstanceDecl, number>
+  /** Total scalar-register count (regs.size). Threads through so
+   *  `delayRef` can emit `{op:'reg', id: regCount + delaySlot}` directly,
+   *  without a downstream `resolveDelayValues` rewrite pass. */
+  regCount?: number
 }
 
 /**
@@ -69,7 +73,18 @@ function opNodeToSlotted(node: ResolvedExprOpNode, slots: Slots, memo?: WeakMap<
     case 'delayRef': {
       const id = slots.delays.get(node.decl)
       if (id === undefined) throw new Error(`resolvedToSlotted: delay '${node.decl.name}' missing from slot table`)
-      return { op: 'delayValue', node_id: id }
+      // Emit a state-register read at the combined slot index. emit_numeric
+      // sees `{op:'reg', id}` and produces a `state_reg` operand. Folding
+      // this in here lets compile_resolved skip a downstream rewrite pass.
+      if (slots.regCount === undefined) {
+        // Defensive fallback for callers that build a Slots table by hand
+        // (e.g. program_type_builder for input-default lowering, where no
+        // delays appear). Emit the legacy delayValue op; an absent
+        // regCount means there are no regs to combine with, so the bare
+        // node_id matches the delay slot.
+        return { op: 'delayValue', node_id: id }
+      }
+      return { op: 'reg', id: slots.regCount + id }
     }
     case 'nestedOut': {
       const node_id = slots.instances.get(node.instance)

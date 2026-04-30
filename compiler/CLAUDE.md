@@ -54,7 +54,7 @@ runtime/
   bindings.ts         koffi FFI declarations matching tropical_c.h
   runtime.ts          Runtime class (tropical_runtime_t wrapper, FinalizationRegistry)
   audio.ts            DAC class (tropical_dac_t wrapper, device listing)
-  param.ts            Param (smoothed) and Trigger (fire-once), with .asExpr()
+  param.ts            Param (smoothed) and Trigger (fire-once); wiring refers to them by name
   audio_smoke.ts      Smoke test for audio output
 ```
 
@@ -143,7 +143,7 @@ Walks lowered ExprNode trees (post-`resolvedToSlotted`), emits a `FlatProgram`:
 - `bindings.ts` — koffi function declarations matching `tropical_c.h`. Loads `libtropical.dylib` from `build/` or `build-profile/`.
 - `runtime.ts` — `Runtime` class wrapping `tropical_runtime_t`. Uses FinalizationRegistry for GC-driven cleanup.
 - `audio.ts` — `DAC` class wrapping `tropical_dac_t`. Static `listDevices()`.
-- `param.ts` — `Param` (smoothed, one-pole lowpass) and `Trigger` (fire-once). `.asExpr()` returns a `SignalExpr` for wiring into expression trees.
+- `param.ts` — `Param` (smoothed, one-pole lowpass) and `Trigger` (fire-once). Wiring references them by name (`{op:'param', name}` / `{op:'trigger', name}`); the materializer resolves names to FFI handles via the session's param/trigger registries at compile time.
 
 ## Tests
 

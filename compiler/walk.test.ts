@@ -380,8 +380,6 @@ describe('mapChildren — leaves', () => {
       { op: 'typeParam', name: 'N' },
       { op: 'sampleRate' },
       { op: 'sampleIndex' },
-      { op: 'smoothedParam', _ptr: true, _handle: 'h' },
-      { op: 'triggerParam', _ptr: true, _handle: 'h' },
       { op: 'const', val: 5 },
     ]
     for (const leaf of leaves) {

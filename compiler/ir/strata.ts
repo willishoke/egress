@@ -11,13 +11,12 @@
  */
 
 import type { ResolvedProgram, TypeParamDecl } from './nodes.js'
-import type { ProgramType } from '../program_types.js'
+import { ProgramType } from '../program_types.js'
 import { specializeProgram } from './specialize.js'
 import { sumLower } from './sum_lower.js'
 import { traceCycles } from './trace_cycles.js'
 import { inlineInstances } from './inline_instances.js'
 import { arrayLower } from './array_lower.js'
-import { resolvedToProgramType } from './program_type_builder.js'
 
 export function strataPipeline(
   prog: ResolvedProgram,
@@ -30,14 +29,13 @@ export function strataPipeline(
   return arrayLower(inlined)
 }
 
-/** Run the full strata pipeline + build a thin ProgramType wrapping the
- *  post-strata `ResolvedProgram`. The returned ProgramType carries
- *  metadata only (port names, port types, register names, default-input
- *  expressions); the runtime IR lives in `_resolved`. */
-export function compileResolvedToProgramDef(
+/** Run the full strata pipeline + wrap the post-strata `ResolvedProgram`
+ *  in a `ProgramType`. The wrapper exposes port/register/default metadata
+ *  via thin getters over the resolved IR — no slot-indexed flattening
+ *  upfront. */
+export function programTypeFromResolved(
   prog: ResolvedProgram,
   typeArgs: ReadonlyMap<TypeParamDecl, number>,
 ): ProgramType {
-  const lowered = strataPipeline(prog, typeArgs)
-  return resolvedToProgramType(lowered)
+  return new ProgramType(strataPipeline(prog, typeArgs))
 }

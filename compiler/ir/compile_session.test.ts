@@ -19,7 +19,7 @@ function singleInstanceSession(typeName: string) {
   const { type } = resolveProgramType(session, typeName, undefined, undefined)
   const inst = type.instantiateAs('inst', { baseTypeName: typeName, typeArgs: new Map() })
   session.instanceRegistry.set('inst', inst)
-  for (const outName of inst._def.outputNames) {
+  for (const outName of inst.outputNames) {
     session.graphOutputs.push({ instance: 'inst', output: outName })
   }
   return session

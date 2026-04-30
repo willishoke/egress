@@ -11,8 +11,8 @@ describe('stdlib Delay<N>', () => {
     const a = resolveProgramType(session, 'Delay', { N: 8 }, undefined)
     const b = resolveProgramType(session, 'Delay', { N: 44100 }, undefined)
     expect(a.type).not.toBe(b.type)
-    expect(a.type._def.registerPortTypes[0]).toEqual(ArrayType(Float, [8]))
-    expect(b.type._def.registerPortTypes[0]).toEqual(ArrayType(Float, [44100]))
+    expect(a.type.registerPortType(0)).toEqual(ArrayType(Float, [8]))
+    expect(b.type.registerPortType(0)).toEqual(ArrayType(Float, [44100]))
   })
 
   test('Delay with default N=44100 matches explicit N=44100', () => {

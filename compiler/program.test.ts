@@ -116,8 +116,8 @@ describe('exportSessionAsProgram — port type round-trip', () => {
     loadProgramAsType(typedLeaf, session2)
     loadProgramAsType(exported, session2)
     const { type: exportedType } = resolveProgramType(session2, 'Exported', undefined, undefined)
-    const srcPt = exportedType._def.inputPortTypes[0]
-    const dstPt = exportedType._def.outputPortTypes[0]
+    const srcPt = exportedType.inputPortType(0)
+    const dstPt = exportedType.outputPortType(0)
     expect(srcPt?.tag).toBe('array')
     expect(dstPt?.tag).toBe('array')
     if (srcPt?.tag === 'array') expect(srcPt.shape).toEqual([4])

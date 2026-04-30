@@ -15,7 +15,7 @@ import type { SessionState } from './session.js'
 import { normalizeProgramFile } from './session.js'
 import type { ProgramType } from './program_types.js'
 import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
-import { compileResolvedToProgramDef } from './ir/strata.js'
+import { programTypeFromResolved } from './ir/strata.js'
 import type { ResolvedProgram } from './ir/nodes.js'
 import { raiseProgram } from './parse/raise.js'
 import { parseProgram as parseTropicalProgram } from './parse/declarations.js'
@@ -122,7 +122,7 @@ export function loadStdlibFromMap(
       continue
     }
     if (session.typeRegistry.has(name)) continue
-    const type = compileResolvedToProgramDef(prog, new Map())
+    const type = programTypeFromResolved(prog, new Map())
     session.typeRegistry.set(name, type)
     session.resolvedRegistry.set(name, prog)
   }
@@ -186,7 +186,7 @@ export function loadStdlibFromSources(
       continue
     }
     if (session.typeRegistry.has(name)) continue
-    const type = compileResolvedToProgramDef(prog, new Map())
+    const type = programTypeFromResolved(prog, new Map())
     session.typeRegistry.set(name, type)
     session.resolvedRegistry.set(name, prog)
   }

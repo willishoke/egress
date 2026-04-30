@@ -330,7 +330,7 @@ function buildInstanceDecl(
   ctx: MaterializeContext,
 ): InstanceDecl {
   const session = ctx.session
-  const baseTypeName = inst.baseTypeName ?? inst._def.typeName
+  const baseTypeName = inst.baseTypeName
   const rawTypeArgs = inst.typeArgs ?? {}
 
   // Try non-generic first (concrete type registered with this base name).

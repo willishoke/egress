@@ -40,7 +40,7 @@ for (const [typeName, instanceName] of modules) {
   loadBuiltins(solo)
   const type = solo.typeRegistry.get(typeName)!
   solo.instanceRegistry.set(instanceName, type.instantiateAs(instanceName))
-  solo.graphOutputs.push({ instance: instanceName, output: type._def.outputNames[0] })
+  solo.graphOutputs.push({ instance: instanceName, output: type.outputNames[0] })
   const t = performance.now()
   try {
     compileSession(solo)

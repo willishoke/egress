@@ -58,8 +58,8 @@ describe('resolveProgramType — generic instantiation', () => {
     expect(a3).toEqual({ N: 8 })
 
     // Specialized regs have concrete sizes
-    expect(t1._def.registerPortTypes[0]).toEqual(ArrayType(Float, [8]))
-    expect(t2._def.registerPortTypes[0]).toEqual(ArrayType(Float, [16]))
+    expect(t1.registerPortType(0)).toEqual(ArrayType(Float, [8]))
+    expect(t2.registerPortType(0)).toEqual(ArrayType(Float, [16]))
   })
 
   test('applies declared default when type_args absent', () => {
@@ -67,7 +67,7 @@ describe('resolveProgramType — generic instantiation', () => {
     loadProgramAsType(genericDelay(), session)
     const { type, typeArgs } = resolveProgramType(session, 'Delay', undefined, undefined)
     expect(typeArgs).toEqual({ N: 44100 })
-    expect(type._def.registerPortTypes[0]).toEqual(ArrayType(Float, [44100]))
+    expect(type.registerPortType(0)).toEqual(ArrayType(Float, [44100]))
   })
 
   test('rejects type_args on non-generic programs', () => {
@@ -126,10 +126,10 @@ describe('resolveProgramType — generic instantiation', () => {
     loadProgramAsType(prog, session)
 
     const { type: t8 } = resolveProgramType(session, 'Bus', { N: 8 }, undefined)
-    expect(t8._def.inputPortTypes[0]).toEqual(ArrayType(Float, [8]))
-    expect(t8._def.outputPortTypes[0]).toEqual(ArrayType(Float, [8]))
+    expect(t8.inputPortType(0)).toEqual(ArrayType(Float, [8]))
+    expect(t8.outputPortType(0)).toEqual(ArrayType(Float, [8]))
 
     const { type: tdef } = resolveProgramType(session, 'Bus', undefined, undefined)
-    expect(tdef._def.inputPortTypes[0]).toEqual(ArrayType(Float, [4]))
+    expect(tdef.inputPortType(0)).toEqual(ArrayType(Float, [4]))
   })
 })

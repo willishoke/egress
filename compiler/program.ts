@@ -18,7 +18,7 @@ import type { RawTypeArgs } from './specialize.js'
 import { Float, portTypeEqual, type PortType } from './term.js'
 import { raiseProgram } from './parse/raise.js'
 import { elaborate, type ExternalProgramResolver } from './ir/elaborator.js'
-import { compileResolvedToProgramDef } from './ir/strata.js'
+import { programTypeFromResolved } from './ir/strata.js'
 import type { ResolvedProgram } from './ir/nodes.js'
 
 // ─────────────────────────────────────────────────────────────
@@ -377,7 +377,7 @@ export function loadProgramAsSession(
 
   // Apply input defaults from each instance's program definition
   for (const [name, inst] of session.instanceRegistry) {
-    const defaults = inst._def.rawInputDefaults
+    const defaults = inst.type.rawInputDefaults
     for (const [inputName, value] of Object.entries(defaults)) {
       const key = `${name}:${inputName}`
       if (!session.inputExprNodes.has(key)) {
@@ -403,7 +403,7 @@ export function loadProgramAsSession(
  * The strata pipeline is the only path: ProgramNode JSON is raised to
  * `ParsedProgramNode`, elaborated against the session's type registry to a
  * `ResolvedProgram`, and (for non-generics) compiled through
- * `compileResolvedToProgramDef`. Generic programs (with `type_params`) are
+ * `programTypeFromResolved`. Generic programs (with `type_params`) are
  * stored in `genericTemplatesResolved` and materialize on instantiation via
  * `resolveProgramType`.
  */
@@ -462,7 +462,7 @@ export function loadProgramAsType(
     return undefined
   }
 
-  const type = compileResolvedToProgramDef(resolved, new Map())
+  const type = programTypeFromResolved(resolved, new Map())
   session.typeRegistry.set(prog.name, type)
   session.resolvedRegistry.set(prog.name, resolved)
   return type
@@ -537,7 +537,7 @@ export function mergeProgramIntoSession(
 
   // Apply input defaults
   for (const [name, inst] of session.instanceRegistry) {
-    const defaults = inst._def.rawInputDefaults
+    const defaults = inst.type.rawInputDefaults
     for (const [inputName, value] of Object.entries(defaults)) {
       const key = `${name}:${inputName}`
       if (!session.inputExprNodes.has(key)) {
@@ -631,7 +631,7 @@ export function loadStdlib(target: StdlibTarget): void {
  * Register stdlib types from a map of pre-parsed `ParsedProgram`s. Elaborates
  * each against a sibling-resolver, then either:
  *   - stashes the `ResolvedProgram` in `genericTemplatesResolved` (generics)
- *   - or compiles via `compileResolvedToProgramDef` and pushes into
+ *   - or compiles via `programTypeFromResolved` and pushes into
  *     `typeRegistry` (non-generics, also cached in `resolvedRegistry`).
  *
  * Elaboration uses fixed-point iteration: each pass elaborates the programs
@@ -676,7 +676,7 @@ function loadStdlibFromResolved(
       continue
     }
     if (session.typeRegistry.has(name)) continue
-    const type = compileResolvedToProgramDef(prog, new Map())
+    const type = programTypeFromResolved(prog, new Map())
     session.typeRegistry.set(name, type)
     session.resolvedRegistry.set(name, prog)
   }

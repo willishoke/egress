@@ -112,7 +112,7 @@ const BUILTIN_NULLARY_OPS: ReadonlySet<string> = new Set([
 /** Legacy n-ary builtins that raise to `call(nameRef(<op>), [...args])`.
  *  Mirrors `lower.ts`'s BUILTIN_CALL_OPS. */
 const BUILTIN_CALL_OPS: ReadonlySet<string> = new Set([
-  'select', 'clamp', 'round', 'ldexp', 'floorDiv', 'pow',
+  'select', 'clamp', 'round', 'ldexp', 'floorDiv',
   'sqrt', 'abs', 'floatExponent', 'arraySet',
 ])
 

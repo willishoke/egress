@@ -132,7 +132,6 @@ function evalOpNode(node: ResolvedExprOpNode, env: InterpretEnv): Value {
     case 'mod':       return binOp(recur(node.args[0]), recur(node.args[1]), (a, b) => b !== 0 ? a % b : 0)
     case 'ldexp':     return binOp(recur(node.args[0]), recur(node.args[1]), (a, b) => a * Math.pow(2, Math.trunc(b)))
     case 'floorDiv':  return binOp(recur(node.args[0]), recur(node.args[1]), (a, b) => b !== 0 ? Math.floor(a / b) : 0)
-    case 'pow':       return binOp(recur(node.args[0]), recur(node.args[1]), (a, b) => Math.pow(a, b))
 
     // ── Binary comparison ──────────────────────────────────
     case 'lt':  return binOp(recur(node.args[0]), recur(node.args[1]), (a, b) => a < b)

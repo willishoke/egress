@@ -119,9 +119,15 @@ const UNARY_CALLS: Record<string, UnaryOpTag> = {
 }
 
 /** Builtin binary function calls — surface name → resolved BinaryOp tag.
- *  These have call syntax (`pow(a, b)`) but the same shape as infix ops. */
+ *  These have call syntax (`ldexp(x, n)`) but the same shape as infix ops.
+ *
+ *  Note: `pow(x, y)` is intentionally absent. The stdlib `Pow` program
+ *  (defined as `Exp(y * Log(x))`) is the canonical pow. The primitive
+ *  op tag was a leak that bypassed the projection scheme; removed in
+ *  the `kill-pow-primitive` PR. Anyone wanting power-of-two should use
+ *  `ldexp(1, n)` (single fmul via IEEE-754 exponent injection); anyone
+ *  wanting fractional exponents should instantiate `Pow`. */
 const BINARY_CALLS: Record<string, BinaryOpTag> = {
-  pow: 'pow',
   floor_div: 'floorDiv', floorDiv: 'floorDiv',
   ldexp: 'ldexp',
 }

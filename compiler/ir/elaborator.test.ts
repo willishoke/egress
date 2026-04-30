@@ -819,19 +819,19 @@ describe('elaborator — new builtin calls', () => {
     expect(expr.op).toBe('floatExponent')
   })
 
-  test('pow / floorDiv / ldexp resolve to BinaryOpNodes', () => {
+  test('floorDiv / ldexp resolve to BinaryOpNodes', () => {
     const p = elabSrc(`
       program X(a: float, b: float) -> (out: float) {
-        out = pow(a, b) + floorDiv(a, b) + ldexp(a, b)
+        out = floorDiv(a, b) + ldexp(a, b)
       }
     `)
-    // out = ((pow + floorDiv) + ldexp); walk for the three op tags.
+    // out = (floorDiv + ldexp); walk for the two op tags.
     const tags: string[] = []
     walk((p.body.assigns[0] as OutputAssign).expr, (obj) => {
       const op = (obj as { op?: string }).op
-      if (op === 'pow' || op === 'floorDiv' || op === 'ldexp') tags.push(op)
+      if (op === 'floorDiv' || op === 'ldexp') tags.push(op)
     })
-    expect(tags.sort()).toEqual(['floorDiv', 'ldexp', 'pow'])
+    expect(tags.sort()).toEqual(['floorDiv', 'ldexp'])
   })
 
   test('zeros(n) resolves to ZerosNode with the count expr', () => {
@@ -866,8 +866,8 @@ describe('elaborator — new builtin calls', () => {
 
   test('binary builtin wrong arity errors', () => {
     expect(() => elabSrc(`
-      program X(a: float) -> (out: float) { out = pow(a) }
-    `)).toThrow(/'pow' takes 2 arguments/)
+      program X(a: float) -> (out: float) { out = ldexp(a) }
+    `)).toThrow(/'ldexp' takes 2 arguments/)
   })
 })
 

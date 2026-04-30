@@ -37,7 +37,7 @@ import { broadcastShapes, type ScalarKind } from './term.js'
  *  shenanigans. Extending it requires editing this declaration. */
 export type WireFormatOp =
   // Arithmetic / comparison / bitwise / logical (binary)
-  | 'add' | 'sub' | 'mul' | 'div' | 'mod' | 'floorDiv' | 'ldexp' | 'pow'
+  | 'add' | 'sub' | 'mul' | 'div' | 'mod' | 'floorDiv' | 'ldexp'
   | 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
   | 'bitAnd' | 'bitOr' | 'bitXor' | 'lshift' | 'rshift'
   | 'and' | 'or'
@@ -117,7 +117,7 @@ export interface Op<N extends number, Tag extends string> {
 // ── Per-arity tag unions ─────────────────────────────────────────────────
 
 /** Binary arithmetic ops. */
-export type ArithBinTag = 'add' | 'sub' | 'mul' | 'div' | 'mod' | 'floorDiv' | 'ldexp' | 'pow'
+export type ArithBinTag = 'add' | 'sub' | 'mul' | 'div' | 'mod' | 'floorDiv' | 'ldexp'
 
 /** Binary comparison ops. */
 export type CompareBinTag = 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'

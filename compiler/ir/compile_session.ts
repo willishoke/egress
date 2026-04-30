@@ -490,7 +490,7 @@ const BINARY_OPS = new Set([
   'lt', 'lte', 'gt', 'gte', 'eq', 'neq',
   'and', 'or',
   'bitAnd', 'bitOr', 'bitXor', 'lshift', 'rshift',
-  'pow', 'floorDiv', 'ldexp',
+  'floorDiv', 'ldexp',
 ])
 
 const UNARY_OPS = new Set([

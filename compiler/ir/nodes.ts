@@ -265,7 +265,7 @@ export type BinaryOpTag =
   // Numeric builtins surfaced as `f(a, b)` in source; same arity/shape as
   // the infix ops above, so they share BinaryOpNode rather than earning
   // their own resolved-IR node types.
-  | 'pow' | 'floorDiv' | 'ldexp'
+  | 'floorDiv' | 'ldexp'
 
 export interface BinaryOpNode {
   op: BinaryOpTag

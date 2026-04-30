@@ -547,7 +547,7 @@ function cloneOpNode(node: ResolvedExprOpNode, t: CloneTable): ResolvedExprOpNod
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
-    case 'pow': case 'floorDiv': case 'ldexp': {
+    case 'floorDiv': case 'ldexp': {
       return {
         op: node.op,
         args: [cloneExpr(node.args[0], t), cloneExpr(node.args[1], t)],

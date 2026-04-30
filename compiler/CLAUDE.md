@@ -98,7 +98,7 @@ type ExprNode = number | boolean | ExprNode[] | { op: string; ... }
 
 `SignalExpr` wraps `ExprNode` with optional static shape metadata. All operations are free functions (no operator overloading in TS):
 
-- **Arithmetic**: `add`, `sub`, `mul`, `div`, `mod`, `floorDiv`, `ldexp`, `pow`
+- **Arithmetic**: `add`, `sub`, `mul`, `div`, `mod`, `floorDiv`, `ldexp` (`Pow` lives in stdlib as `Exp(y * Log(x))`)
 - **Comparison**: `lt`, `lte`, `gt`, `gte`, `eq`, `neq`
 - **Bitwise**: `bitAnd`, `bitOr`, `bitXor`, `lshift`, `rshift`, `bitNot`
 - **Math**: `neg`, `abs`, `sqrt`, `floatExponent`, `not`. Transcendentals (`sin`, `cos`, `tanh`, `exp`, `log`) live in `stdlib/` as program types, not primitives.

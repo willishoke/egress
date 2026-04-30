@@ -125,7 +125,7 @@ function literalDefault(expr: ResolvedExpr, portName: string): ExprNode {
   // is a strata bug — defaults should be pure literal expressions.
   switch (obj.op) {
     case 'add': case 'sub': case 'mul': case 'div': case 'mod':
-    case 'pow': case 'floorDiv': case 'ldexp':
+    case 'floorDiv': case 'ldexp':
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':

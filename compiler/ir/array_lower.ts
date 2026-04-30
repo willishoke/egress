@@ -156,7 +156,7 @@ function opNeedsLowering(node: ResolvedExprOpNode): boolean {
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
-    case 'pow': case 'floorDiv': case 'ldexp':
+    case 'floorDiv': case 'ldexp':
     case 'neg': case 'not': case 'bitNot':
     case 'sqrt': case 'abs': case 'floor': case 'ceil': case 'round':
     case 'floatExponent': case 'toInt': case 'toBool': case 'toFloat':
@@ -350,7 +350,7 @@ function lowerOp(node: ResolvedExprOpNode, subst: SubstMap, memo: Memo): Resolve
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
-    case 'pow': case 'floorDiv': case 'ldexp': {
+    case 'floorDiv': case 'ldexp': {
       const a = lowerExpr(node.args[0], subst, memo)
       const b = lowerExpr(node.args[1], subst, memo)
       return (a === node.args[0] && b === node.args[1]) ? node : { op: node.op, args: [a, b] }

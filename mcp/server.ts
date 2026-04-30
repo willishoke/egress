@@ -712,7 +712,7 @@ function handleDefineProgram(args: Record<string, unknown>) {
     const { node } = normalizeProgramFile(args.def as { schema?: string; [k: string]: unknown })
     const type = loadProgramAsType(node, session)
     if (type) {
-      return { program_name: type.name, inputs: type._def.inputNames, outputs: type._def.outputNames }
+      return { program_name: type.name, inputs: type.inputNames, outputs: type.outputNames }
     }
     // Generic — template only, no concrete ports until instantiation.
     return {
@@ -1043,8 +1043,8 @@ function handleExportProgram(args: Record<string, unknown>) {
 
     return {
       program_name: name,
-      inputs: type._def.inputNames,
-      outputs: type._def.outputNames,
+      inputs: type.inputNames,
+      outputs: type.outputNames,
       instances_included: exportedInstanceNames,
       program: v2NodeToFile(exportedNode as unknown as ExprNode),
     }
@@ -1069,20 +1069,22 @@ function handleRemoveInstance(instanceName: string) {
 function handleListPrograms() {
   return wrap(() => {
     const concrete = [...session.typeRegistry.entries()].map(([typeName, type]) => {
-      const d = type._def
-      const defaultsMap = (d.rawInputDefaults ?? {}) as Record<string, unknown>
+      const defaultsMap = type.rawInputDefaults as Record<string, unknown>
+      const inputPortTypes  = type.inputPortTypes
+      const outputPortTypes = type.outputPortTypes
+      const registerPortTypes = type.registerPortTypes
       return {
         program_name: typeName,
-        inputs:    d.inputNames.map((n, i) => ({
+        inputs:    type.inputNames.map((n, i) => ({
           name: n,
-          type: portTypeOrNull(d.inputPortTypes[i]),
+          type: portTypeOrNull(inputPortTypes[i]),
           default: defaultsMap[n] ?? null,
         })),
-        outputs: d.outputNames.map((n, i) => ({
+        outputs: type.outputNames.map((n, i) => ({
           name: n,
-          type: portTypeOrNull(d.outputPortTypes[i]),
+          type: portTypeOrNull(outputPortTypes[i]),
         })),
-        registers: d.registerNames.map((n, i) => ({ name: n, type: portTypeOrNull(d.registerPortTypes[i]) })),
+        registers: type.registerNames.map((n, i) => ({ name: n, type: portTypeOrNull(registerPortTypes[i]) })),
         type_params: null as Record<string, { type: 'int'; default?: number }> | null,
       }
     })
@@ -1127,7 +1129,7 @@ function handleGetInfo(instanceName: string) {
       type_args: inst.typeArgs ?? null,
       inputs:  inst.inputNames.map((n, i) => ({
         name: n, index: i,
-        type: inst._def.inputPortTypes[i] ?? null,
+        type: inst.inputPortType(i) ?? null,
         expr: session.inputExprNodes.get(`${instanceName}:${n}`) ?? null,
         pretty: session.inputExprNodes.has(`${instanceName}:${n}`)
           ? prettyExpr(session.inputExprNodes.get(`${instanceName}:${n}`)!, session.instanceRegistry)
@@ -1135,7 +1137,7 @@ function handleGetInfo(instanceName: string) {
       })),
       outputs: inst.outputNames.map((n, i) => ({
         name: n, index: i,
-        type: inst._def.outputPortTypes[i] ?? null,
+        type: inst.outputPortType(i) ?? null,
       })),
       registers: inst.registerNames.map((n, i) => ({
         name: n, index: i, type: inst.registerPortType(i) ?? null,
@@ -1511,14 +1513,13 @@ function renderProgramCatalog(): string {
   const lines: string[] = ['# tropical program catalog\n']
   for (const [typeName, type] of session.typeRegistry) {
     lines.push(`## ${typeName}`)
-    const d = type._def
-    const defaultsMap = d.rawInputDefaults as Record<string, unknown>
-    const inputParts = d.inputNames.map(n => {
+    const defaultsMap = type.rawInputDefaults as Record<string, unknown>
+    const inputParts = type.inputNames.map(n => {
       const val = defaultsMap[n]
       return val !== undefined ? `${n}=${JSON.stringify(val)}` : n
     })
     lines.push(`Inputs:  ${inputParts.join(', ')}`)
-    lines.push(`Outputs: ${d.outputNames.join(', ')}`)
+    lines.push(`Outputs: ${type.outputNames.join(', ')}`)
     lines.push('')
   }
   return lines.join('\n')

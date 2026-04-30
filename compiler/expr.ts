@@ -58,7 +58,6 @@ export type WireFormatOp =
   | 'nestedOut' | 'nestedOutput' | 'binding' | 'typeParam'
   | 'sampleRate' | 'sampleIndex'
   | 'param' | 'trigger' | 'paramExpr' | 'triggerParamExpr'
-  | 'smoothedParam' | 'triggerParam'
   | 'const'
   // Combinators + ADTs (parse-time; flow through strata, validateExpr
   // rejects them at the MCP runtime boundary).
@@ -331,12 +330,6 @@ export interface ParamRefNode { op: 'param'; name: string }
 /** Pre-resolution trigger reference by name (mirrors ParamRefNode). */
 export interface TriggerRefNode { op: 'trigger'; name: string }
 
-/** Smoothed control parameter handle (FFI). */
-export interface SmoothedParamNode { op: 'smoothedParam'; _ptr: true; _handle: unknown }
-
-/** One-shot trigger control parameter handle (FFI). */
-export interface TriggerParamNode { op: 'triggerParam'; _ptr: true; _handle: unknown }
-
 /** Typed scalar literal emitted by specialize.ts after type-arg substitution. */
 export interface ConstNode {
   op: 'const'
@@ -349,8 +342,7 @@ export type LeafNode =
   | InputNode | RegRefNode | DelayRefNode | DelayValueNode
   | NestedOutNode | NestedOutputNode | BindingNode | TypeParamNode
   | SampleRateNode | SampleIndexNode
-  | ParamRefNode | TriggerRefNode
-  | SmoothedParamNode | TriggerParamNode | ConstNode
+  | ParamRefNode | TriggerRefNode | ConstNode
 
 // ── Decl ops (top-level only — appear at decl/assign positions) ─────────
 
@@ -808,16 +800,6 @@ export function delayValueExpr(nodeId: number): SignalExpr {
   return SignalExpr.fromNode({ op: 'delayValue', node_id: nodeId })
 }
 
-/** Create a smoothed-param expression node for use in wiring expressions. */
-export function paramExpr(paramHandle: unknown): SignalExpr {
-  return SignalExpr.fromNode({ op: 'smoothedParam', _ptr: true, _handle: paramHandle })
-}
-
-/** Create a trigger-param expression node for use in wiring expressions. */
-export function triggerParamExpr(paramHandle: unknown): SignalExpr {
-  return SignalExpr.fromNode({ op: 'triggerParam', _ptr: true, _handle: paramHandle })
-}
-
 // ─────────────────────────────────────────────────────────────
 // Expression validation
 // ─────────────────────────────────────────────────────────────
@@ -841,7 +823,6 @@ const TERNARY_OPS = new Set(['clamp', 'select'])
 
 const LEAF_OPS = new Set([
   'input', 'reg', 'sampleRate', 'sampleIndex',
-  'smoothedParam', 'triggerParam',
   'delayValue', 'delayRef',
   'nestedOutput', 'nestedOut',
   'binding',

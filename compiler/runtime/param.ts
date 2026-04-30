@@ -1,9 +1,12 @@
 /**
  * Param and Trigger — control-rate parameters. Port of tropical/param.py.
+ *
+ * Wiring references these by name (`{op:'param', name}` / `{op:'trigger', name}`);
+ * the materializer (`compiler/ir/materialize_session.ts`) looks up the FFI
+ * handle off the session's paramRegistry / triggerRegistry at compile time.
  */
 
 import * as b from './bindings.js'
-import { SignalExpr } from '../expr.js'
 
 const _registry = new FinalizationRegistry((handle: unknown) => {
   b.tropical_param_free(handle)
@@ -30,11 +33,6 @@ export class Param {
     b.tropical_param_set(this._h, v)
   }
 
-  /** Return a SmoothedParam SignalExpr node for use in wiring expressions. */
-  asExpr(): SignalExpr {
-    return SignalExpr.fromNode({ op: 'smoothedParam', name: '(unnamed)', _ptr: true, _handle: this._h })
-  }
-
   dispose(): void {
     _registry.unregister(this)
     b.tropical_param_free(this._h)
@@ -56,11 +54,6 @@ export class Trigger {
 
   get value(): number {
     return b.tropical_param_get(this._h) as number
-  }
-
-  /** Return a TriggerParam SignalExpr node for use in wiring expressions. */
-  asExpr(): SignalExpr {
-    return SignalExpr.fromNode({ op: 'triggerParam', name: '(unnamed)', _ptr: true, _handle: this._h })
   }
 
   dispose(): void {

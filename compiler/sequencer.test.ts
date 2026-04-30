@@ -11,8 +11,8 @@ describe('stdlib Sequencer<N>', () => {
     const { type: t4 } = resolveProgramType(session, 'Sequencer', { N: 4 }, undefined)
     const { type: t8 } = resolveProgramType(session, 'Sequencer', { N: 8 }, undefined)
     // values is the second input
-    expect(t4._def.inputPortTypes[1]).toEqual(ArrayType(Float, [4]))
-    expect(t8._def.inputPortTypes[1]).toEqual(ArrayType(Float, [8]))
+    expect(t4.inputPortType(1)).toEqual(ArrayType(Float, [4]))
+    expect(t8.inputPortType(1)).toEqual(ArrayType(Float, [8]))
     expect(t4).not.toBe(t8)
   })
 
@@ -21,7 +21,7 @@ describe('stdlib Sequencer<N>', () => {
     loadStdlib(session)
     const { type, typeArgs } = resolveProgramType(session, 'Sequencer', undefined, undefined)
     expect(typeArgs).toEqual({ N: 8 })
-    expect(type._def.inputPortTypes[1]).toEqual(ArrayType(Float, [8]))
+    expect(type.inputPortType(1)).toEqual(ArrayType(Float, [8]))
   })
 
   test('Sequencer<4> flattens end-to-end with an arrayPack input', () => {

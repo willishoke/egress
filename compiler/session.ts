@@ -22,7 +22,7 @@ import {
   type PortType, type ScalarKind, type SumTypeMeta,
   Float, Int, Bool, Unit, ArrayType, StructType, SumType,
 } from './term.js'
-import { compileResolvedToProgramDef } from './ir/strata.js'
+import { programTypeFromResolved } from './ir/strata.js'
 import type { TypeParamDecl } from './ir/nodes.js'
 
 // ─────────────────────────────────────────────────────────────
@@ -252,7 +252,7 @@ type ResolveSession = Pick<SessionState, 'typeRegistry' | 'specializationCache' 
  *
  * The strata pipeline is the only path: generic templates live in
  * `genericTemplatesResolved` as `ResolvedProgram`s; instantiation routes
- * through `compileResolvedToProgramDef` to produce a fresh `ProgramType`.
+ * through `programTypeFromResolved` to produce a fresh `ProgramType`.
  */
 export function resolveProgramType(
   session: ResolveSession,
@@ -281,8 +281,8 @@ export function resolveProgramType(
       }
       subst.set(decl, value)
     }
-    const type = compileResolvedToProgramDef(template, subst)
-    type._def.typeName = key
+    const type = programTypeFromResolved(template, subst)
+    type.rename(key)
     session.specializationCache.set(key, type)
     return { type, typeArgs: resolved }
   }

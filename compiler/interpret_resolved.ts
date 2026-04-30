@@ -19,7 +19,7 @@ import type {
   RegDecl, DelayDecl, InputDecl, ParamDecl,
 } from './ir/nodes.js'
 import type { SessionState } from './session.js'
-import { materializeSessionToResolvedIR } from './ir/compile_session.js'
+import { materializeSessionToResolvedIR } from './ir/materialize_session.js'
 
 // ─────────────────────────────────────────────────────────────
 // Environment

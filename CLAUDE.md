@@ -90,7 +90,7 @@ The TypeScript layer handles everything from program definition through instruct
 
 **Port types and graph utilities** (`term.ts`, `compiler.ts`) — `PortType` describes signal port types (scalar, array, product). `compiler.ts` provides dependency graph construction, topological sort (Kahn's with level grouping), and cycle detection (Tarjan's SCC). The flattener uses these for execution ordering and automatic feedback cycle resolution.
 
-**FFI bridge** (`runtime/bindings.ts`, `runtime.ts`, `audio.ts`, `param.ts`) — koffi declarations mirroring `tropical_c.h`. `Runtime` wraps `tropical_runtime_t` with FinalizationRegistry. `Param`/`Trigger` provide `.asExpr()` for wiring control parameters into expression trees.
+**FFI bridge** (`runtime/bindings.ts`, `runtime.ts`, `audio.ts`, `param.ts`) — koffi declarations mirroring `tropical_c.h`. `Runtime` wraps `tropical_runtime_t` with FinalizationRegistry. `Param`/`Trigger` are referenced by name in wiring expressions; the materializer resolves names to FFI handles at compile time.
 
 ## Engine (`engine/`)
 

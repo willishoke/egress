@@ -150,7 +150,7 @@ export function nextName(session: SessionState, prefix: string): string {
 // ─────────────────────────────────────────────────────────────
 
 const BINARY_OPS = new Set([
-  'add', 'sub', 'mul', 'div', 'floorDiv', 'mod', 'pow',
+  'add', 'sub', 'mul', 'div', 'floorDiv', 'mod',
   'lt', 'lte', 'gt', 'gte', 'eq', 'neq',
   'bitAnd', 'bitOr', 'bitXor', 'lshift', 'rshift',
 ])

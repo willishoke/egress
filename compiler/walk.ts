@@ -37,7 +37,7 @@ import type {
 // ─────────────────────────────────────────────────────────────
 
 const BINARY_TAGS: ReadonlySet<string> = new Set([
-  'add', 'sub', 'mul', 'div', 'mod', 'floorDiv', 'ldexp', 'pow',
+  'add', 'sub', 'mul', 'div', 'mod', 'floorDiv', 'ldexp',
   'lt', 'lte', 'gt', 'gte', 'eq', 'neq',
   'bitAnd', 'bitOr', 'bitXor', 'lshift', 'rshift',
   'and', 'or',

@@ -162,7 +162,7 @@ export function traceCycles(prog: ResolvedProgram): ResolvedProgram {
       case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
       case 'and': case 'or':
       case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
-      case 'pow': case 'floorDiv': case 'ldexp':
+      case 'floorDiv': case 'ldexp':
         return { op: node.op, args: [rewriteForOwner(node.args[0], breakSet), rewriteForOwner(node.args[1], breakSet)] }
       case 'neg': case 'not': case 'bitNot':
       case 'sqrt': case 'abs': case 'floor': case 'ceil': case 'round':
@@ -295,7 +295,7 @@ function collectNestedOutInstances(
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
-    case 'pow': case 'floorDiv': case 'ldexp':
+    case 'floorDiv': case 'ldexp':
     case 'neg': case 'not': case 'bitNot':
     case 'sqrt': case 'abs': case 'floor': case 'ceil': case 'round':
     case 'floatExponent': case 'toInt': case 'toBool': case 'toFloat':

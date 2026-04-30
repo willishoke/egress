@@ -376,16 +376,6 @@ class Emitter {
       return this.compileUnary(uniTag, opNode.args[0], expected)
     }
 
-    // pow is a binary numeric op in the resolved IR.
-    if (obj.op === 'pow') {
-      // emit_numeric never had a Pow tag — pow is unhandled and substitutes 0.
-      // Preserve that legacy behavior here (Sin/Cos/etc use polynomial approx
-      // that includes pow, but the post-arrayLower body shouldn't actually
-      // reach pow at runtime — its output is dead-stripped or emitted as 0).
-      console.warn(`emit_resolved: unhandled op 'pow', substituting 0`)
-      return { isArray: false, op: { kind: 'const', val: 0, scalar_type: 'float' }, scalarType: 'float' }
-    }
-
     // Ternary ops.
     if (obj.op === 'clamp')  return this.compileTernary('Clamp',  [obj.args[0], obj.args[1], obj.args[2]], expected)
     if (obj.op === 'select') return this.compileTernary('Select', [obj.args[0], obj.args[1], obj.args[2]], expected)

@@ -390,7 +390,7 @@ function rewriteOp(node: ResolvedExprOpNode, ctx: Ctx): ResolvedExpr {
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
-    case 'pow': case 'floorDiv': case 'ldexp':
+    case 'floorDiv': case 'ldexp':
       return { op: node.op, args: [rewriteExpr(node.args[0], ctx), rewriteExpr(node.args[1], ctx)] }
     case 'neg': case 'not': case 'bitNot':
     case 'sqrt': case 'abs': case 'floor': case 'ceil': case 'round':
@@ -706,7 +706,7 @@ function exprHasSumExpr(expr: ResolvedExpr): boolean {
     case 'lt': case 'lte': case 'gt': case 'gte': case 'eq': case 'neq':
     case 'and': case 'or':
     case 'bitAnd': case 'bitOr': case 'bitXor': case 'lshift': case 'rshift':
-    case 'pow': case 'floorDiv': case 'ldexp':
+    case 'floorDiv': case 'ldexp':
     case 'neg': case 'not': case 'bitNot':
     case 'sqrt': case 'abs': case 'floor': case 'ceil': case 'round':
     case 'floatExponent': case 'toInt': case 'toBool': case 'toFloat':

@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import type { FlatPlan } from './flat_plan'
-import type { NInstr, NOperand, ScalarType } from './emit_numeric'
+import type { NInstr, NOperand, ScalarType } from './ir/emit_resolved'
 import { emitWasm } from './emit_wasm'
 
 // ─────────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@
  * `flatten.ts`, which is being retired.
  */
 
-import type { NInstr, GroupInfo, ScalarType } from './emit_numeric'
+import type { NInstr, GroupInfo, ScalarType } from './ir/emit_resolved'
 
 export interface FlatPlan {
   schema: 'tropical_plan_4'

@@ -53,7 +53,20 @@ import { specializeProgram } from './specialize.js'
 import { cloneResolvedProgram } from './clone.js'
 
 export function compileSession(session: SessionState): FlatPlan {
-  return compileResolved(materializeSessionToResolvedIR(session))
+  const { lowered, paramDecls } = materializeSessionForEmit(session)
+  // Build paramHandles from the materializer's ParamDecls. Each ParamDecl
+  // is keyed by name; the session's paramRegistry / triggerRegistry give
+  // us the FFI handle for it. Decls without a live registry entry get
+  // skipped — emit_resolved emits const 0 in that case.
+  const paramHandles = new Map<ParamDecl, { ptr: string }>()
+  for (const [name, decl] of paramDecls) {
+    const reg = decl.kind === 'trigger' ? session.triggerRegistry : session.paramRegistry
+    const live = reg.get(name)
+    if (live !== undefined && (live as { _h?: unknown })._h !== undefined) {
+      paramHandles.set(decl, { ptr: String((live as { _h: unknown })._h) })
+    }
+  }
+  return compileResolved(lowered, { paramHandles })
 }
 
 /**
@@ -68,7 +81,18 @@ export function compileSession(session: SessionState): FlatPlan {
  * the exact same IR — the property `jit_interp_equiv` rests on.
  */
 export function materializeSessionToResolvedIR(session: SessionState): ResolvedProgram {
-  const { synthetic, gateableInstances } = materializeSessionWithMeta(session)
+  return materializeSessionForEmit(session).lowered
+}
+
+/** Variant of `materializeSessionToResolvedIR` that also exposes the
+ *  ParamDecl map so `compileSession` can look up FFI handles per decl. */
+function materializeSessionForEmit(session: SessionState): {
+  lowered: ResolvedProgram
+  paramDecls: Map<string, ParamDecl>
+} {
+  const ctx = makeContext(session)
+  const synthetic = materializeSessionInner(session, ctx)
+  const gateableInstances = ctx.gateableInstances
 
   // For each gateable instance, append a synthetic outputDecl + outputAssign
   // carrying its gate expression. This routes the gate expressions through
@@ -112,7 +136,7 @@ export function materializeSessionToResolvedIR(session: SessionState): ResolvedP
   }
 
   if (inlinedGates.size > 0) applyGateableWraps(lowered, inlinedGates)
-  return lowered
+  return { lowered, paramDecls: ctx.paramDecls }
 }
 
 /** Wrap every lifted reg/delay update and output expression whose
@@ -186,17 +210,6 @@ function applyGateableWraps(
   // strata also flow into other gateable instances' gate expressions
   // (so `a2`'s gate `a1.out > 1.5` reads the wrapped a1.out, matching
   // legacy `flatten.ts:wrapOutput` semantics).
-}
-
-interface MaterializeResult {
-  synthetic: ResolvedProgram
-  gateableInstances: Map<string, ResolvedExpr>
-}
-
-function materializeSessionWithMeta(session: SessionState): MaterializeResult {
-  const ctx = makeContext(session)
-  const synthetic = materializeSessionInner(session, ctx)
-  return { synthetic, gateableInstances: ctx.gateableInstances }
 }
 
 function makeContext(session: SessionState): MaterializeContext {

@@ -25,7 +25,7 @@
  */
 
 import type { FlatPlan } from './flat_plan'
-import type { NInstr, NOperand, ScalarType } from './emit_numeric.js'
+import type { NInstr, NOperand, ScalarType } from './ir/emit_resolved'
 import { type WasmLayout, computeLayout, collectParamPtrs } from './wasm_memory_layout.js'
 
 // ─────────────────────────────────────────────────────────────

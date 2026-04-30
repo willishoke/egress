@@ -16,7 +16,7 @@
  * typed LLVM IR (i64 for int, i1 for bool) instead of f64 round-trips.
  */
 
-import type { ExprNode } from './expr.js'
+import type { EmitExprNode as ExprNode } from './ir/emit_node.js'
 
 // ─────────────────────────────────────────────────────────────
 // Public types (mirror OrcJitEngine.hpp FlatProgram / FlatInstr)

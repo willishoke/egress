@@ -242,11 +242,13 @@ function cloneBodyDeclShell(d: BodyDecl, t: CloneTable): BodyDecl {
     case 'regDecl': {
       const fresh: RegDecl = { op: 'regDecl', name: d.name, init: 0 as ResolvedExpr }
       if (d.type !== undefined) fresh.type = d.type   // ScalarKind | AliasTypeDef (shared)
+      if (d._liftedFrom !== undefined) fresh._liftedFrom = d._liftedFrom
       t.regs.set(d, fresh)
       return fresh
     }
     case 'delayDecl': {
       const fresh: DelayDecl = { op: 'delayDecl', name: d.name, update: 0, init: 0 }
+      if (d._liftedFrom !== undefined) fresh._liftedFrom = d._liftedFrom
       t.delays.set(d, fresh)
       return fresh
     }

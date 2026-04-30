@@ -117,24 +117,25 @@ export function materializeSessionToResolvedIR(session: SessionState): ResolvedP
 
 /** Wrap every lifted reg/delay update and output expression whose
  *  origin is a gateable session instance with `select(gate, expr,
- *  fallback)`. Identifies origin by the renaming convention
- *  `${instanceName}_${innerName}` that `inlineInstances:liftClonedBody`
- *  applies. (This name-prefix convention is the §2.3 backward-compat
- *  shape; D7 will replace it with a `_liftedFrom` decl-identity tag.) */
+ *  fallback)`. Identifies origin via the `_liftedFrom` provenance tag
+ *  that `inlineInstances:liftClonedBody` stamps onto each lifted decl
+ *  — replaces the §2.3 D7 name-prefix anti-pattern.
+ *
+ *  Synthetic delays from `traceCycles` are tagged
+ *  `_liftedFrom: 'synthetic'`; they don't belong to any gateable
+ *  instance and are skipped. */
 function applyGateableWraps(
   prog: ResolvedProgram,
   gateableInstances: ReadonlyMap<string, ResolvedExpr>,
 ): void {
-  // Match by exact name OR by `${instName}_` prefix (the renaming
-  // convention `inlineInstances:liftClonedBody` applies to lifted
-  // sub-instance regs/delays). Returning a sentinel `null` for
-  // not-found avoids the `!gate` truthy bug when the gate expression
-  // is the boolean literal `false`.
-  const matchInstance = (declName: string): ResolvedExpr | null => {
-    for (const [instName, gate] of gateableInstances) {
-      if (declName === instName || declName.startsWith(`${instName}_`)) return gate
-    }
-    return null
+  /** Look up the gate for a decl based on its `_liftedFrom` tag. Returns
+   *  null when the decl isn't from a gateable instance (or not lifted at
+   *  all — outer-program decls untagged). */
+  const gateFor = (decl: { _liftedFrom?: string }): ResolvedExpr | null => {
+    if (decl._liftedFrom === undefined) return null
+    if (decl._liftedFrom === 'synthetic') return null
+    const gate = gateableInstances.get(decl._liftedFrom)
+    return gate === undefined ? null : gate
   }
 
   // Skip an expression that was already wrapped pre-strata (the
@@ -151,7 +152,7 @@ function applyGateableWraps(
   // didn't exist pre-strata).
   for (const a of prog.body.assigns) {
     if (a.op !== 'nextUpdate') continue
-    const gate = matchInstance(a.target.name)
+    const gate = gateFor(a.target)
     if (gate === null) continue
     if (alreadyWrapped(a.expr, gate)) continue
     const fallback: ResolvedExpr = a.target.op === 'regDecl'
@@ -164,7 +165,7 @@ function applyGateableWraps(
   // nextUpdate. Same skip-if-already-wrapped logic.
   for (const d of prog.body.decls) {
     if (d.op !== 'delayDecl') continue
-    const gate = matchInstance(d.name)
+    const gate = gateFor(d)
     if (gate === null) continue
     const haveNextUpdate = prog.body.assigns.some(
       a => a.op === 'nextUpdate' && a.target === d,

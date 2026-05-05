@@ -39,7 +39,7 @@
       {
         "op": "instanceDecl",
         "name": "VCOBass",
-        "program": "VCO",
+        "program": "BlepSaw",
         "inputs": {
           "freq": {
             "op": "mul",
@@ -62,7 +62,7 @@
                               {
                                 "op": "ref",
                                 "instance": "VCOBit0",
-                                "output": "sqr"
+                                "output": "saw"
                               },
                               0
                             ]
@@ -79,7 +79,7 @@
                               {
                                 "op": "ref",
                                 "instance": "VCOBit1",
-                                "output": "sqr"
+                                "output": "saw"
                               },
                               0
                             ]
@@ -97,7 +97,7 @@
       {
         "op": "instanceDecl",
         "name": "VCOBit0",
-        "program": "VCO",
+        "program": "BlepSaw",
         "inputs": {
           "freq": 0.47
         }
@@ -105,7 +105,7 @@
       {
         "op": "instanceDecl",
         "name": "VCOBit1",
-        "program": "VCO",
+        "program": "BlepSaw",
         "inputs": {
           "freq": 0.97
         }

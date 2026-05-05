@@ -7,32 +7,42 @@
       {
         "op": "instanceDecl",
         "name": "vco1",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
-          "freq": 110,
-          "fm_index": 2,
-          "fm": {
+          "freq": {
             "op": "add",
             "args": [
+              110,
               {
-                "op": "add",
+                "op": "mul",
                 "args": [
                   {
-                    "op": "ref",
-                    "instance": "d2",
-                    "output": "y"
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d2",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d3",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d4",
+                        "output": "y"
+                      }
+                    ]
                   },
-                  {
-                    "op": "ref",
-                    "instance": "d3",
-                    "output": "y"
-                  }
+                  2
                 ]
-              },
-              {
-                "op": "ref",
-                "instance": "d4",
-                "output": "y"
               }
             ]
           }
@@ -41,32 +51,42 @@
       {
         "op": "instanceDecl",
         "name": "vco2",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
-          "freq": 165,
-          "fm_index": 2,
-          "fm": {
+          "freq": {
             "op": "add",
             "args": [
+              165,
               {
-                "op": "add",
+                "op": "mul",
                 "args": [
                   {
-                    "op": "ref",
-                    "instance": "d1",
-                    "output": "y"
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d1",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d3",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d4",
+                        "output": "y"
+                      }
+                    ]
                   },
-                  {
-                    "op": "ref",
-                    "instance": "d3",
-                    "output": "y"
-                  }
+                  2
                 ]
-              },
-              {
-                "op": "ref",
-                "instance": "d4",
-                "output": "y"
               }
             ]
           }
@@ -75,32 +95,42 @@
       {
         "op": "instanceDecl",
         "name": "vco3",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
-          "freq": 220,
-          "fm_index": 2,
-          "fm": {
+          "freq": {
             "op": "add",
             "args": [
+              220,
               {
-                "op": "add",
+                "op": "mul",
                 "args": [
                   {
-                    "op": "ref",
-                    "instance": "d1",
-                    "output": "y"
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d1",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d2",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d4",
+                        "output": "y"
+                      }
+                    ]
                   },
-                  {
-                    "op": "ref",
-                    "instance": "d2",
-                    "output": "y"
-                  }
+                  2
                 ]
-              },
-              {
-                "op": "ref",
-                "instance": "d4",
-                "output": "y"
               }
             ]
           }
@@ -109,32 +139,42 @@
       {
         "op": "instanceDecl",
         "name": "vco4",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
-          "freq": 330,
-          "fm_index": 2,
-          "fm": {
+          "freq": {
             "op": "add",
             "args": [
+              330,
               {
-                "op": "add",
+                "op": "mul",
                 "args": [
                   {
-                    "op": "ref",
-                    "instance": "d1",
-                    "output": "y"
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d1",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d2",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d3",
+                        "output": "y"
+                      }
+                    ]
                   },
-                  {
-                    "op": "ref",
-                    "instance": "d2",
-                    "output": "y"
-                  }
+                  2
                 ]
-              },
-              {
-                "op": "ref",
-                "instance": "d3",
-                "output": "y"
               }
             ]
           }
@@ -148,7 +188,7 @@
           "x": {
             "op": "ref",
             "instance": "vco1",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -163,7 +203,7 @@
           "x": {
             "op": "ref",
             "instance": "vco2",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -178,7 +218,7 @@
           "x": {
             "op": "ref",
             "instance": "vco3",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -193,7 +233,7 @@
           "x": {
             "op": "ref",
             "instance": "vco4",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -207,19 +247,19 @@
   "audio_outputs": [
     {
       "instance": "vco1",
-      "output": "sin"
+      "output": "sine"
     },
     {
       "instance": "vco2",
-      "output": "sin"
+      "output": "sine"
     },
     {
       "instance": "vco3",
-      "output": "sin"
+      "output": "sine"
     },
     {
       "instance": "vco4",
-      "output": "sin"
+      "output": "sine"
     }
   ]
 }

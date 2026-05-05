@@ -35,19 +35,12 @@
               {
                 "op": "instanceDecl",
                 "name": "env",
-                "program": "ADEnvelope",
+                "program": "EnvExpDecay",
                 "inputs": {
-                  "gate": {
+                  "decay": 0.9995,
+                  "trigger": {
                     "op": "input",
                     "name": "gate"
-                  },
-                  "attack": {
-                    "op": "input",
-                    "name": "attack"
-                  },
-                  "decay": {
-                    "op": "input",
-                    "name": "decay"
                   }
                 }
               },
@@ -109,7 +102,7 @@
       {
         "op": "instanceDecl",
         "name": "lfo",
-        "program": "VCO",
+        "program": "BlepSaw",
         "inputs": {
           "freq": 2
         }
@@ -125,7 +118,7 @@
               {
                 "op": "ref",
                 "instance": "lfo",
-                "output": "tri"
+                "output": "saw"
               },
               0
             ]
@@ -135,77 +128,87 @@
       {
         "op": "instanceDecl",
         "name": "vco1",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
-            "op": "mul",
+            "op": "add",
             "args": [
-              48.5,
               {
                 "op": "mul",
                 "args": [
+                  48.5,
                   {
-                    "op": "select",
+                    "op": "mul",
                     "args": [
                       {
-                        "op": "gt",
+                        "op": "select",
                         "args": [
                           {
-                            "op": "ref",
-                            "instance": "seq",
-                            "output": "out"
+                            "op": "gt",
+                            "args": [
+                              {
+                                "op": "ref",
+                                "instance": "seq",
+                                "output": "out"
+                              },
+                              0
+                            ]
                           },
-                          0
+                          1,
+                          0.6667
                         ]
                       },
-                      1,
-                      0.6667
-                    ]
-                  },
-                  {
-                    "op": "add",
-                    "args": [
-                      1.25,
                       {
-                        "op": "mul",
+                        "op": "add",
                         "args": [
-                          0.25,
+                          1.25,
                           {
-                            "op": "ref",
-                            "instance": "lfo",
-                            "output": "tri"
+                            "op": "mul",
+                            "args": [
+                              0.25,
+                              {
+                                "op": "ref",
+                                "instance": "lfo",
+                                "output": "saw"
+                              }
+                            ]
                           }
                         ]
                       }
                     ]
                   }
                 ]
-              }
-            ]
-          },
-          "fm_index": 1,
-          "fm": {
-            "op": "add",
-            "args": [
-              {
-                "op": "add",
-                "args": [
-                  {
-                    "op": "ref",
-                    "instance": "d2",
-                    "output": "y"
-                  },
-                  {
-                    "op": "ref",
-                    "instance": "d3",
-                    "output": "y"
-                  }
-                ]
               },
               {
-                "op": "ref",
-                "instance": "d4",
-                "output": "y"
+                "op": "mul",
+                "args": [
+                  {
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d2",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d3",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d4",
+                        "output": "y"
+                      }
+                    ]
+                  },
+                  1
+                ]
               }
             ]
           }
@@ -214,77 +217,87 @@
       {
         "op": "instanceDecl",
         "name": "vco2",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
-            "op": "mul",
+            "op": "add",
             "args": [
-              90.5,
               {
                 "op": "mul",
                 "args": [
+                  90.5,
                   {
-                    "op": "select",
+                    "op": "mul",
                     "args": [
                       {
-                        "op": "gt",
+                        "op": "select",
                         "args": [
                           {
-                            "op": "ref",
-                            "instance": "seq",
-                            "output": "out"
+                            "op": "gt",
+                            "args": [
+                              {
+                                "op": "ref",
+                                "instance": "seq",
+                                "output": "out"
+                              },
+                              0
+                            ]
                           },
-                          0
+                          1,
+                          0.6667
                         ]
                       },
-                      1,
-                      0.6667
-                    ]
-                  },
-                  {
-                    "op": "add",
-                    "args": [
-                      1.25,
                       {
-                        "op": "mul",
+                        "op": "add",
                         "args": [
-                          0.25,
+                          1.25,
                           {
-                            "op": "ref",
-                            "instance": "lfo",
-                            "output": "tri"
+                            "op": "mul",
+                            "args": [
+                              0.25,
+                              {
+                                "op": "ref",
+                                "instance": "lfo",
+                                "output": "saw"
+                              }
+                            ]
                           }
                         ]
                       }
                     ]
                   }
                 ]
-              }
-            ]
-          },
-          "fm_index": 1,
-          "fm": {
-            "op": "add",
-            "args": [
-              {
-                "op": "add",
-                "args": [
-                  {
-                    "op": "ref",
-                    "instance": "d1",
-                    "output": "y"
-                  },
-                  {
-                    "op": "ref",
-                    "instance": "d3",
-                    "output": "y"
-                  }
-                ]
               },
               {
-                "op": "ref",
-                "instance": "d4",
-                "output": "y"
+                "op": "mul",
+                "args": [
+                  {
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d1",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d3",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d4",
+                        "output": "y"
+                      }
+                    ]
+                  },
+                  1
+                ]
               }
             ]
           }
@@ -293,77 +306,87 @@
       {
         "op": "instanceDecl",
         "name": "vco3",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
-            "op": "mul",
+            "op": "add",
             "args": [
-              131.5,
               {
                 "op": "mul",
                 "args": [
+                  131.5,
                   {
-                    "op": "select",
+                    "op": "mul",
                     "args": [
                       {
-                        "op": "gt",
+                        "op": "select",
                         "args": [
                           {
-                            "op": "ref",
-                            "instance": "seq",
-                            "output": "out"
+                            "op": "gt",
+                            "args": [
+                              {
+                                "op": "ref",
+                                "instance": "seq",
+                                "output": "out"
+                              },
+                              0
+                            ]
                           },
-                          0
+                          1,
+                          0.6667
                         ]
                       },
-                      1,
-                      0.6667
-                    ]
-                  },
-                  {
-                    "op": "add",
-                    "args": [
-                      1.25,
                       {
-                        "op": "mul",
+                        "op": "add",
                         "args": [
-                          0.25,
+                          1.25,
                           {
-                            "op": "ref",
-                            "instance": "lfo",
-                            "output": "tri"
+                            "op": "mul",
+                            "args": [
+                              0.25,
+                              {
+                                "op": "ref",
+                                "instance": "lfo",
+                                "output": "saw"
+                              }
+                            ]
                           }
                         ]
                       }
                     ]
                   }
                 ]
-              }
-            ]
-          },
-          "fm_index": 1,
-          "fm": {
-            "op": "add",
-            "args": [
-              {
-                "op": "add",
-                "args": [
-                  {
-                    "op": "ref",
-                    "instance": "d1",
-                    "output": "y"
-                  },
-                  {
-                    "op": "ref",
-                    "instance": "d2",
-                    "output": "y"
-                  }
-                ]
               },
               {
-                "op": "ref",
-                "instance": "d4",
-                "output": "y"
+                "op": "mul",
+                "args": [
+                  {
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d1",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d2",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d4",
+                        "output": "y"
+                      }
+                    ]
+                  },
+                  1
+                ]
               }
             ]
           }
@@ -372,77 +395,87 @@
       {
         "op": "instanceDecl",
         "name": "vco4",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
-            "op": "mul",
+            "op": "add",
             "args": [
-              173.5,
               {
                 "op": "mul",
                 "args": [
+                  173.5,
                   {
-                    "op": "select",
+                    "op": "mul",
                     "args": [
                       {
-                        "op": "gt",
+                        "op": "select",
                         "args": [
                           {
-                            "op": "ref",
-                            "instance": "seq",
-                            "output": "out"
+                            "op": "gt",
+                            "args": [
+                              {
+                                "op": "ref",
+                                "instance": "seq",
+                                "output": "out"
+                              },
+                              0
+                            ]
                           },
-                          0
+                          1,
+                          0.6667
                         ]
                       },
-                      1,
-                      0.6667
-                    ]
-                  },
-                  {
-                    "op": "add",
-                    "args": [
-                      1.25,
                       {
-                        "op": "mul",
+                        "op": "add",
                         "args": [
-                          0.25,
+                          1.25,
                           {
-                            "op": "ref",
-                            "instance": "lfo",
-                            "output": "tri"
+                            "op": "mul",
+                            "args": [
+                              0.25,
+                              {
+                                "op": "ref",
+                                "instance": "lfo",
+                                "output": "saw"
+                              }
+                            ]
                           }
                         ]
                       }
                     ]
                   }
                 ]
-              }
-            ]
-          },
-          "fm_index": 1,
-          "fm": {
-            "op": "add",
-            "args": [
-              {
-                "op": "add",
-                "args": [
-                  {
-                    "op": "ref",
-                    "instance": "d1",
-                    "output": "y"
-                  },
-                  {
-                    "op": "ref",
-                    "instance": "d2",
-                    "output": "y"
-                  }
-                ]
               },
               {
-                "op": "ref",
-                "instance": "d3",
-                "output": "y"
+                "op": "mul",
+                "args": [
+                  {
+                    "op": "add",
+                    "args": [
+                      {
+                        "op": "add",
+                        "args": [
+                          {
+                            "op": "ref",
+                            "instance": "d1",
+                            "output": "y"
+                          },
+                          {
+                            "op": "ref",
+                            "instance": "d2",
+                            "output": "y"
+                          }
+                        ]
+                      },
+                      {
+                        "op": "ref",
+                        "instance": "d3",
+                        "output": "y"
+                      }
+                    ]
+                  },
+                  1
+                ]
               }
             ]
           }
@@ -456,7 +489,7 @@
           "x": {
             "op": "ref",
             "instance": "vco1",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -471,7 +504,7 @@
           "x": {
             "op": "ref",
             "instance": "vco2",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -486,7 +519,7 @@
           "x": {
             "op": "ref",
             "instance": "vco3",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -501,7 +534,7 @@
           "x": {
             "op": "ref",
             "instance": "vco4",
-            "output": "sin"
+            "output": "sine"
           }
         },
         "type_args": {
@@ -516,7 +549,7 @@
           "audio": {
             "op": "ref",
             "instance": "vco1",
-            "output": "sin"
+            "output": "sine"
           },
           "gate": {
             "op": "gt",
@@ -524,7 +557,7 @@
               {
                 "op": "ref",
                 "instance": "lfo",
-                "output": "tri"
+                "output": "saw"
               },
               0
             ]
@@ -540,7 +573,7 @@
           "audio": {
             "op": "ref",
             "instance": "vco2",
-            "output": "sin"
+            "output": "sine"
           },
           "gate": {
             "op": "gt",
@@ -548,7 +581,7 @@
               {
                 "op": "ref",
                 "instance": "lfo",
-                "output": "tri"
+                "output": "saw"
               },
               0
             ]
@@ -564,7 +597,7 @@
           "audio": {
             "op": "ref",
             "instance": "vco3",
-            "output": "sin"
+            "output": "sine"
           },
           "gate": {
             "op": "gt",
@@ -572,7 +605,7 @@
               {
                 "op": "ref",
                 "instance": "lfo",
-                "output": "tri"
+                "output": "saw"
               },
               0
             ]
@@ -588,7 +621,7 @@
           "audio": {
             "op": "ref",
             "instance": "vco4",
-            "output": "sin"
+            "output": "sine"
           },
           "gate": {
             "op": "gt",
@@ -596,7 +629,7 @@
               {
                 "op": "ref",
                 "instance": "lfo",
-                "output": "tri"
+                "output": "saw"
               },
               0
             ]
@@ -607,7 +640,7 @@
       {
         "op": "instanceDecl",
         "name": "bass_vco",
-        "program": "VCO",
+        "program": "BlepSaw",
         "inputs": {
           "freq": {
             "op": "select",
@@ -645,7 +678,7 @@
               {
                 "op": "ref",
                 "instance": "lfo",
-                "output": "tri"
+                "output": "saw"
               },
               0
             ]

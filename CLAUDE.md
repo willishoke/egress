@@ -7,7 +7,6 @@ Realtime audio synthesis with LLVM ORC JIT. The entire program — a graph of DS
 ```bash
 make build          # C++ core, outputs build/libtropical.dylib
 make mcp-ts         # build + launch MCP server on stdio (requires Bun)
-make profile        # build with profiling instrumentation
 make clean          # remove build directories
 ```
 

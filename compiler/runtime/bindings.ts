@@ -33,13 +33,10 @@ function findLib(): string {
     if (fs.existsSync(candidate)) return candidate
   }
 
-  // 3. Common build subdirectories
-  const buildDirs = ['build-profile', 'build', 'build-jit-profile', 'build-jit-ctypes', 'build-jit', 'build-ctypes']
-  for (const buildDir of buildDirs) {
-    for (const name of unixNames) {
-      const candidate = path.join(parent, buildDir, name)
-      if (fs.existsSync(candidate)) return candidate
-    }
+  // 3. Build subdirectory
+  for (const name of unixNames) {
+    const candidate = path.join(parent, 'build', name)
+    if (fs.existsSync(candidate)) return candidate
   }
 
   throw new Error(

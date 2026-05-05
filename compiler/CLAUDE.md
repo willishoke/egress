@@ -140,7 +140,7 @@ Walks lowered ExprNode trees (post-`resolvedToSlotted`), emits a `FlatProgram`:
 
 ## FFI bridge (`runtime/`)
 
-- `bindings.ts` — koffi function declarations matching `tropical_c.h`. Loads `libtropical.dylib` from `build/` or `build-profile/`.
+- `bindings.ts` — koffi function declarations matching `tropical_c.h`. Loads `libtropical.dylib` from `build/`.
 - `runtime.ts` — `Runtime` class wrapping `tropical_runtime_t`. Uses FinalizationRegistry for GC-driven cleanup.
 - `audio.ts` — `DAC` class wrapping `tropical_dac_t`. Static `listDevices()`.
 - `param.ts` — `Param` (smoothed, one-pole lowpass) and `Trigger` (fire-once). Wiring references them by name (`{op:'param', name}` / `{op:'trigger', name}`); the materializer resolves names to FFI handles via the session's param/trigger registries at compile time.

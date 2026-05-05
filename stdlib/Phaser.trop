@@ -1,20 +1,28 @@
 ```tropical
-program Phaser(input = 0, feedback = 0.4, lfo_speed = 0.2) -> (output, lfo) {
+program Phaser<N: int = 4>(input = 0, feedback = 0.4, lfo_speed = 0.2) -> (output, lfo) {
   reg fb = 0
-  program _allpassStage(x, a) -> (y) {
-    reg x_prev = 0
-    reg y_prev = 0
-    y = -a * x + x_prev + a * y_prev
-    next x_prev = x
-    next y_prev = -a * x + x_prev + a * y_prev
-  }
+  reg x_prev = zeros(N)
+  reg y_prev = zeros(N)
   lfo_sin = Sin(x: 6.283185307179586 * (sampleIndex() * lfo_speed / sampleRate()))
-  ap_0 = _allpassStage(x: input + feedback * fb, a: 0.6 + 0.35 * lfo_sin.out)
-  ap_1 = _allpassStage(x: ap_0.y, a: 0.6 + 0.35 * lfo_sin.out)
-  ap_2 = _allpassStage(x: ap_1.y, a: 0.6 + 0.35 * lfo_sin.out)
-  ap_3 = _allpassStage(x: ap_2.y, a: 0.6 + 0.35 * lfo_sin.out)
-  output = 0.5 * input + 0.5 * ap_3.y
+  output = let {
+    a: 0.6 + 0.35 * lfo_sin.out,
+    ys: scan(generate(N, (i) => i), input + feedback * fb, (acc, i) =>
+           -a * acc + x_prev[i] + a * y_prev[i])
+  } in 0.5 * input + 0.5 * ys[N - 1]
   lfo = lfo_sin.out
-  next fb = ap_3.y
+  next fb = let {
+    a: 0.6 + 0.35 * lfo_sin.out,
+    ys: scan(generate(N, (i) => i), input + feedback * fb, (acc, i) =>
+           -a * acc + x_prev[i] + a * y_prev[i])
+  } in ys[N - 1]
+  next y_prev = let { a: 0.6 + 0.35 * lfo_sin.out } in
+    scan(generate(N, (i) => i), input + feedback * fb, (acc, i) =>
+      -a * acc + x_prev[i] + a * y_prev[i])
+  next x_prev = let {
+    a: 0.6 + 0.35 * lfo_sin.out,
+    ys: scan(generate(N, (i) => i), input + feedback * fb, (acc, i) =>
+           -a * acc + x_prev[i] + a * y_prev[i])
+  } in generate(N, (i) =>
+    select(i > 0, ys[clamp(i - 1, 0, N - 1)], input + feedback * fb))
 }
 ```

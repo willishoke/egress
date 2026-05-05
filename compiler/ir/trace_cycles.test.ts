@@ -20,6 +20,8 @@ import { extractMarkdown } from '../parse/markdown.js'
 import { parseProgram } from '../parse/declarations.js'
 import { elaborate, type ExternalProgramResolver } from './elaborator.js'
 import { traceCycles } from './trace_cycles.js'
+import { cloneResolvedProgram } from './clone.js'
+import { strataPipeline } from './strata.js'
 import type {
   ResolvedProgram, BodyDecl, InstanceDecl, DelayDecl,
   ResolvedExpr, NestedOut, DelayRef,
@@ -134,6 +136,53 @@ describe('traceCycles — three-instance cycle', () => {
     // the chosen breaker).
     expect(afterDelays.length).toBe(beforeDelays + 1)
     expect(afterDelays[afterDelays.length - 1].name).toBe('_feedback_a_out_')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────
+// Identity consistency under downstream clone
+// ─────────────────────────────────────────────────────────────
+
+describe('traceCycles — InstanceDecl identity is consistent for cloneResolvedProgram', () => {
+  // After traceCycles, every nestedOut.instance ref in the resulting
+  // program (in instance inputs, body assigns, and synthetic delay
+  // updates) must point at an InstanceDecl that is registered in
+  // body.decls. Otherwise cloneResolvedProgram throws "unregistered
+  // InstanceDecl 'X'" when the next stratum (inlineInstances) tries to
+  // clone the program. This is the exact bug that broke cross-coupled
+  // delay topologies (e.g. cross_fm_4.json) before the rebuild loop
+  // was changed to mutate inputs in place.
+
+  test('two-instance cycle survives cloneResolvedProgram', () => {
+    const p = elab(`
+      program Top() -> (out: float) {
+        program Inner(in_: float) -> (out_: float) { out_ = in_ + 1 }
+        a = Inner(in_: b.out_)
+        b = Inner(in_: a.out_)
+        out = b.out_
+      }
+    `)
+    const traced = traceCycles(p)
+    expect(() => cloneResolvedProgram(traced)).not.toThrow()
+  })
+
+  test('cross-coupled delay topology compiles through full strata pipeline', () => {
+    // 2 oscillators + 2 delays cross-coupled — minimal repro of the
+    // cross_fm_4.json bug. Each VCO's freq reads the other delay's
+    // output; each delay's input reads the matching VCO's output.
+    // All 4 instances form one SCC.
+    const p = elab(`
+      program Top() -> (out: float) {
+        program VCO(freq: float) -> (sine: float) { sine = freq + 1 }
+        program Delay(x: float) -> (y: float) { y = x }
+        d1 = Delay(x: vco1.sine)
+        d2 = Delay(x: vco2.sine)
+        vco1 = VCO(freq: 110 + d2.y)
+        vco2 = VCO(freq: 220 + d1.y)
+        out = vco1.sine + vco2.sine
+      }
+    `)
+    expect(() => strataPipeline(p)).not.toThrow()
   })
 })
 

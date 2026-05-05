@@ -38,6 +38,53 @@
       },
       {
         "op": "instanceDecl",
+        "name": "PowBassFreq",
+        "program": "Pow",
+        "inputs": {
+          "x": 2,
+          "y": {
+            "op": "add",
+            "args": [
+              {
+                "op": "mul",
+                "args": [
+                  0.25,
+                  {
+                    "op": "gt",
+                    "args": [
+                      {
+                        "op": "ref",
+                        "instance": "VCOBit0",
+                        "output": "saw"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "mul",
+                "args": [
+                  0.583,
+                  {
+                    "op": "gt",
+                    "args": [
+                      {
+                        "op": "ref",
+                        "instance": "VCOBit1",
+                        "output": "saw"
+                      },
+                      0
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "op": "instanceDecl",
         "name": "VCOBass",
         "program": "BlepSaw",
         "inputs": {
@@ -46,49 +93,9 @@
             "args": [
               55,
               {
-                "op": "pow",
-                "args": [
-                  2,
-                  {
-                    "op": "add",
-                    "args": [
-                      {
-                        "op": "mul",
-                        "args": [
-                          0.25,
-                          {
-                            "op": "gt",
-                            "args": [
-                              {
-                                "op": "ref",
-                                "instance": "VCOBit0",
-                                "output": "saw"
-                              },
-                              0
-                            ]
-                          }
-                        ]
-                      },
-                      {
-                        "op": "mul",
-                        "args": [
-                          0.583,
-                          {
-                            "op": "gt",
-                            "args": [
-                              {
-                                "op": "ref",
-                                "instance": "VCOBit1",
-                                "output": "saw"
-                              },
-                              0
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
+                "op": "ref",
+                "instance": "PowBassFreq",
+                "output": "out"
               }
             ]
           }
@@ -113,33 +120,27 @@
       {
         "op": "instanceDecl",
         "name": "EnvBassAmp",
-        "program": "ADSREnvelope",
+        "program": "EnvExpDecay",
         "inputs": {
-          "gate": {
+          "decay": 0.9995,
+          "trigger": {
             "op": "ref",
             "instance": "ClockStep",
             "output": "output"
-          },
-          "attack": 0.005,
-          "decay": 0.18,
-          "sustain": 0,
-          "release": 0.04
+          }
         }
       },
       {
         "op": "instanceDecl",
         "name": "EnvBassFilt",
-        "program": "ADSREnvelope",
+        "program": "EnvExpDecay",
         "inputs": {
-          "gate": {
+          "decay": 0.9995,
+          "trigger": {
             "op": "ref",
             "instance": "ClockStep",
             "output": "output"
-          },
-          "attack": 0.002,
-          "decay": 0.07,
-          "sustain": 0,
-          "release": 0.02
+          }
         }
       },
       {
@@ -175,22 +176,6 @@
       },
       {
         "op": "instanceDecl",
-        "name": "Kick",
-        "program": "BassDrum",
-        "inputs": {
-          "gate": {
-            "op": "ref",
-            "instance": "ClockBeat",
-            "output": "output"
-          },
-          "freq": 55,
-          "punch": 0.75,
-          "decay": 0.38,
-          "tone": 8
-        }
-      },
-      {
-        "op": "instanceDecl",
         "name": "HatNoise",
         "program": "NoiseLFSR",
         "inputs": {
@@ -204,15 +189,14 @@
       {
         "op": "instanceDecl",
         "name": "EnvHat",
-        "program": "ADEnvelope",
+        "program": "EnvExpDecay",
         "inputs": {
-          "gate": {
+          "decay": 0.9995,
+          "trigger": {
             "op": "ref",
             "instance": "ClockHat",
             "output": "output"
-          },
-          "attack": 0.001,
-          "decay": 0.04
+          }
         }
       },
       {
@@ -269,10 +253,6 @@
     {
       "instance": "VCABass",
       "output": "out"
-    },
-    {
-      "instance": "Kick",
-      "output": "output"
     },
     {
       "instance": "VCAHat",

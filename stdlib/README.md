@@ -6,7 +6,7 @@ build the same files are inlined into `compiler/stdlib_bundled.ts` by
 `web/bundle_stdlib.ts`.
 
 Every program in this directory is *just code* — no privileged primitives.
-Transcendentals are polynomial approximations defined in `.trop`; filters
+Math functions are polynomial approximations defined in `.trop`; filters
 compose from one-pole sections; effects are graphs of these. Swap a file
 to change the math.
 
@@ -26,11 +26,59 @@ ready for any backend (`compileResolved` → JIT, `interpret_resolved`,
 
 ## Catalog
 
-### Transcendentals
+The catalogue is stratified into four tiers. Each tier may use the
+tiers below it but never the tiers above. Reading top-down, every row
+is *strictly poorer in primitives* than its dependencies — the same
+direction the strata pipeline runs.
 
-Polynomial approximations. The math sits in the `.trop` source — change
-the coefficients and the JIT picks up the new approximation on the next
-build.
+```
+                    ┌───────────────┐
+                    │  Composites   │   Phaser, LadderFilter, Bubble, …
+                    └───────┬───────┘
+                            │ instantiates
+                    ┌───────▼───────┐
+                    │ DSP primitives│   OnePole, Delay<N>, SinOsc, …
+                    └───────┬───────┘
+                            │ may call
+                    ┌───────▼───────┐
+                    │     Math      │   Sin, Tanh, Exp, Log, …
+                    └───────┬───────┘
+                            │ written in
+                    ┌───────▼───────┐
+                    │   Builtins    │   +  *  clamp  select  ldexp  …
+                    └───────────────┘
+```
+
+### Builtins
+
+The closed set of expression-IR ops the parser knows about. These are
+the only things in the system that aren't written in `.trop`. The
+authoritative list is `WireFormatOp` in `compiler/expr.ts`; the
+user-facing subset (the ops a `.trop` author can write) is:
+
+| Group | Ops |
+|-------|-----|
+| Arithmetic       | `+` `-` `*` `/` `%` `//` `ldexp` |
+| Comparison       | `<` `<=` `>` `>=` `==` `!=` |
+| Logical          | `&&` `\|\|` `!` |
+| Bitwise          | `&` `\|` `^` `<<` `>>` `~` |
+| Unary math       | unary `-`, `abs` `sqrt` `floor` `ceil` `round` `floatExponent` |
+| Conversions      | `toInt` `toBool` `toFloat` |
+| Selection        | `select(cond, a, b)`, `clamp(x, lo, hi)` |
+| Arrays           | array literals `[…]`, `index`, `arraySet` |
+| Ambient leaves   | numeric/bool constants, `sampleRate()`, `sampleIndex()` |
+| Combinators      | `let`, `fold`, `scan`, `generate`, `iterate`, `chain`, `map2`, `zipWith` (lowered by `arrayLower`) |
+| ADTs             | `tag`, `match` (lowered by `sumLower`) |
+
+Wiring/structural ops (`ref`, `param`, `delay`, the `*Decl` family,
+etc.) exist in `WireFormatOp` but aren't callable as functions in
+source — the parser produces them from syntax.
+
+### Math
+
+Pure scalar functions over the builtins. Polynomial / rational
+approximations live in the `.trop` source — change the coefficients
+and the JIT picks up the new approximation on the next build.
 
 | Type   | Ports | Notes |
 |--------|-------|-------|
@@ -41,17 +89,22 @@ build.
 | `Log`  | `(x: float) → out` | `floatExponent` for the integer part, 14-term polynomial on `m - 1`. |
 | `Pow`  | `(x: float, y: float) → out` | `Exp(y · Log(x))`. |
 
-### Filters and shapers
+### DSP primitives
 
-| Type            | Ports |
-|-----------------|-------|
-| `OnePole`       | `(input: signal, g: float) → out`. One-pole IIR with `tanh` saturation on input and state. |
-| `LadderFilter`  | `(input, cutoff: freq, resonance: unipolar, drive) → (lp, bp, hp, notch)`. 4-pole Moog-style; four `OnePole`s plus `Tanh` on the input. |
-| `SoftClip`      | `(input: signal, drive: float) → out`. `Tanh(drive · input)`. |
-| `SVF`           | `(input, cutoff: freq, q: float) → (lp, bp, hp)`. ZDF state-variable filter. |
-| `BitCrusher`    | `(audio, bit_depth, sample_rate_hz) → output`. Quantization + sample-rate decimation. |
+Foundational signal-processing blocks. Each does one job, may call
+into Math, but does *not* instantiate other DSP primitives — they're
+the leaves of any patch graph. Sub-grouped by role.
 
-### Delays
+#### Filters and shapers
+
+| Type         | Ports |
+|--------------|-------|
+| `OnePole`    | `(input: signal, g: float) → out`. One-pole IIR with `Tanh` saturation on input and state. |
+| `SoftClip`   | `(input: signal, drive: float) → out`. `Tanh(drive · input)`. |
+| `SVF`        | `(input, cutoff: freq, q: float) → (lp, bp, hp)`. ZDF state-variable filter. |
+| `BitCrusher` | `(audio, bit_depth, sample_rate_hz) → output`. Quantization + sample-rate decimation. |
+
+#### Delays
 
 | Type           | Ports |
 |----------------|-------|
@@ -59,42 +112,53 @@ build.
 | `CombDelay`    | `(input: signal, feedback: float) → out`. Single-tap feedback comb. |
 | `Delay<N>`     | `<N: int = 44100>(x) → y breaks_cycles`. Generic ring buffer of length `N`; the `breaks_cycles` flag tells `traceCycles` it's a feedback-safe boundary. |
 
-### Oscillators
+#### Oscillators
 
 | Type     | Ports |
 |----------|-------|
 | `SinOsc` | `(freq: freq) → sine`. Phase-correct sine via `Sin(2π · sampleIndex · freq / sampleRate)`. |
 | `BlepSaw`| `(freq: freq) → saw`. Polynomial-BLEP-corrected sawtooth (no aliasing at the discontinuity). |
 
-### Effects
+#### Noise
 
-| Type        | Ports |
-|-------------|-------|
-| `Phaser`    | `(input, feedback, lfo_speed) → (output, lfo)`. 4-stage allpass network with one feedback tap, modulated by an internal `Sin` LFO. |
-| `Phaser16`  | `(input, feedback, lfo_speed) → (output, lfo)`. Same shape, 16 stages. |
-| `Bubble`    | `(trigger, radius, q, sigma, decay_scale, amp_scale, attack_g) → out`. SVF excited by a `TriggerRamp`, gated through `EnvExpDecay`; a single drop. |
-| `BubbleCloud` | `(trigger, radius, q, sigma, decay_scale, amp_scale) → out`. 8-voice round-robin over `Bubble`. |
+| Type         | Ports |
+|--------------|-------|
+| `WhiteNoise` | `() → out: float`. xorshift64 noise. |
+| `NoiseLFSR`  | `(clock) → out: signal`. 16-bit LFSR clocked by an external trigger. |
 
-### Envelopes and sequencing
+#### Envelopes and triggers
 
-| Type                  | Ports |
-|-----------------------|-------|
-| `EnvExpDecay`         | `(trigger: signal, decay: float) → env`. Sum-typed delay (`Idle | Decaying(level)`) — the canonical example of a sum that `sum_lower` decomposes into a tag register plus one scalar slot per (variant, field). |
-| `Sequencer<N>`        | `<N: int = 8>(clock: unipolar, values: float[N]) → value`. Edge-triggered step sequencer over an `N`-element array. |
-| `Seq4MinorTranspose`  | `(trigger: unipolar) → freq: freq`. Four-step minor-key sequencer; demonstrates an instance of `Sequencer<N=4>`. |
-| `SampleHold`          | `(trigger: signal, input: signal) → value`. Captures `input` on rising edge of `trigger`; holds otherwise. |
-| `TriggerRamp`         | `(trigger: signal) → (frames: float, edge: float)`. Sum-typed delay (`Quiescent | Counting(n)`) that emits a frame counter from each rising edge. |
-| `PoissonEvent`        | `(rate: float) → trigger: signal`. xorshift-based stochastic event generator at the requested rate. |
+| Type           | Ports |
+|----------------|-------|
+| `EnvExpDecay`  | `(trigger: signal, decay: float) → env`. Sum-typed delay (`Idle | Decaying(level)`) — the canonical example of a sum that `sum_lower` decomposes into a tag register plus one scalar slot per (variant, field). |
+| `TriggerRamp`  | `(trigger: signal) → (frames: float, edge: float)`. Sum-typed delay (`Quiescent | Counting(n)`) that emits a frame counter from each rising edge. |
+| `SampleHold`   | `(trigger: signal, input: signal) → value`. Captures `input` on rising edge of `trigger`; holds otherwise. |
+| `PoissonEvent` | `(rate: float) → trigger: signal`. xorshift-based stochastic event generator at the requested rate. |
 
-### Utility and control
+#### Sequencing and control
 
-| Type          | Ports |
-|---------------|-------|
-| `VCA`         | `(audio: float, cv: float) → out`. Multiplicative gain. |
-| `CrossFade`   | `(a: signal, b: signal, mix: unipolar) → out`. Linear two-channel mix. |
-| `Clock`       | `(freq: freq, ratios_in: float[1]) → (output: unipolar, ratios_out: float[1])`. Master clock + ratio-array fan-out. |
-| `NoiseLFSR`   | `(clock) → out: signal`. 16-bit LFSR clocked by an external trigger. |
-| `WhiteNoise`  | `() → out: float`. xorshift64 noise. |
+| Type           | Ports |
+|----------------|-------|
+| `Sequencer<N>` | `<N: int = 8>(clock: unipolar, values: float[N]) → value`. Edge-triggered step sequencer over an `N`-element array. |
+| `Clock`        | `(freq: freq, ratios_in: float[1]) → (output: unipolar, ratios_out: float[1])`. Master clock + ratio-array fan-out. |
+| `VCA`          | `(audio: float, cv: float) → out`. Multiplicative gain. |
+| `CrossFade`    | `(a: signal, b: signal, mix: unipolar) → out`. Linear two-channel mix. |
+
+### Composites
+
+Programs whose body wires together other DSP types — patches in the
+stdlib's clothing. The `inline_instances` stratum splices these
+subgraphs into a single flat body before emit; the JIT sees no
+"composite" / "primitive" distinction, only scalar instructions.
+
+| Type                 | Ports | Composed of |
+|----------------------|-------|-------------|
+| `LadderFilter`       | `(input, cutoff: freq, resonance: unipolar, drive) → (lp, bp, hp, notch)` | 4× `OnePole` + `Tanh` |
+| `Phaser`             | `(input, feedback, lfo_speed) → (output, lfo)` | 4× inline `_allpassStage` + `Sin` LFO |
+| `Phaser16`           | `(input, feedback, lfo_speed) → (output, lfo)` | 16× inline `_allpassStage` + `Sin` LFO |
+| `Bubble`             | `(trigger, radius, q, sigma, decay_scale, amp_scale, attack_g) → out` | `SampleHold` + `TriggerRamp` + `Exp` + `EnvExpDecay` + `SVF` |
+| `BubbleCloud`        | `(trigger, radius, q, sigma, decay_scale, amp_scale) → out` | 8× `Bubble`, integer round-robin |
+| `Seq4MinorTranspose` | `(trigger: unipolar) → freq: freq` | `Sequencer<N=4>` over a fixed minor-key value array |
 
 ## Generic programs
 
@@ -106,21 +170,6 @@ Two stdlib programs declare type parameters:
 Specialization happens in the `specialize` stratum: the concrete `N` is
 substituted into every `ShapeDim` and expression-position `TypeParamRef`,
 producing a fresh `ResolvedProgram` per `(template, args)` pair.
-
-## Composition examples
-
-Several stdlib programs are non-trivial compositions:
-
-- `LadderFilter` instantiates `Tanh` once and `OnePole` four times.
-- `Phaser` and `Phaser16` define an inline `_allpassStage` subprogram
-  and instantiate it 4 (resp. 16) times.
-- `Bubble` graphs together `SampleHold`, `TriggerRamp`, `Exp`,
-  `EnvExpDecay`, and `SVF`.
-- `BubbleCloud` instantiates `Bubble` eight times and gates each voice
-  by an integer round-robin counter.
-
-The `inline_instances` stratum splices these subgraphs into a single
-flat body before emit; the JIT sees no "stdlib" — only scalar instructions.
 
 ## Surface syntax
 

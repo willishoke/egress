@@ -18,8 +18,6 @@ Or [build from source](INSTALL.md). Requires LLVM ≥ 19, CMake, and Bun.
 
 ## Quick start
 
-There are three ways to drive tropical, depending on what you want to do.
-
 ### Through Claude Code (MCP)
 
 tropical ships with `.mcp.json`. Open the repo in Claude Code and the
@@ -33,17 +31,6 @@ tropical ships with `.mcp.json`. Open the repo in Claude Code and the
 The MCP server handles compilation, kernel loading, and audio output.
 22 tools cover program definition, instance/wiring graph editing,
 audio control, and patch I/O — see [`mcp/CLAUDE.md`](mcp/CLAUDE.md).
-
-### Standalone smoke test
-
-For a patch you already have, no audio device, no Claude:
-
-```bash
-bun run mcp/test_patch.ts patches/sequencer_demo.json [n_frames]
-```
-
-Loads the patch, runs the kernel for `n_frames` samples, reports peak
-output. Useful as a CI check or for debugging compile errors.
 
 ### Browser
 
@@ -61,15 +48,15 @@ See [`web/CLAUDE.md`](web/CLAUDE.md).
 ## Programs
 
 31 stdlib programs ship as `.trop` source files in
-[`stdlib/`](stdlib/README.md). Transcendentals, filters, delays,
+[`stdlib/`](stdlib/README.md). Math functions, filters, delays,
 oscillators, effects, envelopes, sequencers, utility — every type is
 just code. `LadderFilter` is four `OnePole`s plus a `Tanh`; `Pow` is
 `Exp(y · Log(x))`. Swap a file to change the math.
 
 Highlights:
 
-- **Transcendentals** — `Sin`, `Cos`, `Tanh`, `Exp`, `Log`, `Pow` as
-  polynomial approximations
+- **Math** — `Sin`, `Cos`, `Tanh`, `Exp`, `Log`, `Pow` as polynomial
+  approximations
 - **Filters** — `OnePole`, `LadderFilter` (4-pole Moog), `SVF`,
   `SoftClip`, `BitCrusher`
 - **Delays** — `AllpassDelay`, `CombDelay`, generic `Delay<N>`
@@ -122,6 +109,10 @@ make mcp-ts     # build + launch MCP server on stdio
 
 cmake --build build -j4 && ctest --test-dir build   # C++ tests in isolation
 bun test                                              # TS tests in isolation
+
+bun run mcp/test_patch.ts patches/sequencer_demo.json [n_frames]
+                                                      # offline smoke: load a patch,
+                                                      # run N samples, report peak output
 ```
 
 ## Troubleshooting

@@ -178,6 +178,47 @@ const arrayRegWholesaleWriteback: EdgeFixture = {
   tolerance: 12,
 }
 
+/** Bool-expected propagation through arithmetic. compileBinary's
+ *  `secondExpected = l.scalarType` for comparisons used to forward the
+ *  left arg's `bool` type to the right arg, and then non-comparison /
+ *  non-bitwise binaries forwarded that `bool` straight to their own
+ *  args. So in `eq(bool_value, x + 0.5)`, the `0.5` literal would try
+ *  to narrow to bool and throw — even though arithmetic on float/int
+ *  args can never produce bool.
+ *
+ *  Reproduces in cross_fm_evolved via `Mul(Greater(_,_), LessEq(_,_))`
+ *  inside NoiseLFSR's tick computation, which becomes a Select cond
+ *  after inlining and propagates bool through the comparison's RHS.
+ *
+ *  This fixture isolates the pattern: an `eq` whose left arg returns
+ *  bool, whose right arg is an arithmetic expression with a non-0/1
+ *  float literal. */
+const boolPropagationThroughArith: EdgeFixture = {
+  name: 'bool_propagation_through_arith',
+  program: {
+    op: 'program',
+    name: 'BoolPropagation',
+    ports: { inputs: [{ name: 'x', default: 0.3 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        // eq( gt(x, 0), x * 0.5 + 0.25 )
+        expr: {
+          op: 'eq',
+          args: [
+            { op: 'gt', args: [{ op: 'input', name: 'x' }, 0] },
+            { op: 'add', args: [
+              { op: 'mul', args: [{ op: 'input', name: 'x' }, 0.5] },
+              0.25,
+            ] },
+          ],
+        },
+      }],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
 export const EDGE_FIXTURES: EdgeFixture[] = [
   divByZero,
   sqrtNegative,
@@ -185,4 +226,5 @@ export const EDGE_FIXTURES: EdgeFixture[] = [
   stableAccumulator,
   selectWithSpecials,
   arrayRegWholesaleWriteback,
+  boolPropagationThroughArith,
 ]

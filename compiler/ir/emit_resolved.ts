@@ -439,12 +439,26 @@ class Emitter {
 
   // ── Compile a binary op. ──
   private compileBinary(tag: string, argNodes: [ResolvedExpr, ResolvedExpr], expected?: ScalarType): CompileResult {
+    // `expected` is a hint used to narrow leaf literals (e.g. `add(int_reg, 1)`
+    // wants the `1` to compile as int, not float). For arithmetic ops we can
+    // propagate it down — but never `'bool'`. Arithmetic on float/int args
+    // can't produce bool, so pushing `expected='bool'` into the args (which
+    // happens when this op's result is the cond of a Select, or the left arg
+    // of a comparison whose other side is bool) would wrongly try to narrow
+    // any float literal in the subtree to bool.
+    //
+    // Comparison ops are already exempt (argExpected=undefined) because they
+    // fully redefine their arg types via the comparison itself; we additionally
+    // strip 'bool' from non-bitwise non-comparison ops here. The `secondExpected`
+    // path below also strips 'bool' from the comparison's right-arg expected,
+    // since `secondExpected = l.scalarType` may be 'bool' (e.g. `gt(bool, expr)`).
+    const propagated = expected === 'bool' ? undefined : expected
     const argExpected = BITWISE_TAGS.has(tag) ? 'int' as ScalarType
       : COMPARISON_TAGS.has(tag) ? undefined
-      : expected
+      : propagated
     let l = this.compileNode(argNodes[0], argExpected)
     const secondExpected = COMPARISON_TAGS.has(tag)
-      ? (l.isArray ? 'float' : l.scalarType)
+      ? (l.isArray ? 'float' : (l.scalarType === 'bool' ? undefined : l.scalarType))
       : argExpected
     let r = this.compileNode(argNodes[1], secondExpected)
     if (l.isArray && l.size === 1) l = this.unboxArray(l)
@@ -491,8 +505,10 @@ class Emitter {
 
   // ── Compile a ternary op. ──
   private compileTernary(tag: string, argNodes: [ResolvedExpr, ResolvedExpr, ResolvedExpr], expected?: ScalarType): CompileResult {
+    // For Select: cond must be bool, but arm exprs are arbitrary — don't
+    // push 'bool' into them (same reasoning as compileBinary above).
     const condExpected: ScalarType | undefined = tag === 'Select' ? 'bool' : expected
-    const armExpected = expected
+    const armExpected = expected === 'bool' ? undefined : expected
     let a = this.compileNode(argNodes[0], condExpected)
     let b = this.compileNode(argNodes[1], armExpected)
     let c = this.compileNode(argNodes[2], armExpected)

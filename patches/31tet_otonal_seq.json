@@ -348,7 +348,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO1",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "mul",
@@ -370,7 +370,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO2",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "mul",
@@ -392,7 +392,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO3",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "mul",
@@ -414,7 +414,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO4",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "mul",
@@ -436,7 +436,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO5",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "ref",
@@ -448,29 +448,27 @@
       {
         "op": "instanceDecl",
         "name": "Env1",
-        "program": "ADEnvelope",
+        "program": "EnvExpDecay",
         "inputs": {
-          "gate": {
+          "decay": 0.9995,
+          "trigger": {
             "op": "ref",
             "instance": "Clock1",
             "output": "output"
-          },
-          "attack": 0.012,
-          "decay": 0.58
+          }
         }
       },
       {
         "op": "instanceDecl",
         "name": "Env2",
-        "program": "ADEnvelope",
+        "program": "EnvExpDecay",
         "inputs": {
-          "gate": {
+          "decay": 0.9995,
+          "trigger": {
             "op": "ref",
             "instance": "Clock3",
             "output": "output"
-          },
-          "attack": 0.008,
-          "decay": 0.25
+          }
         }
       },
       {
@@ -484,7 +482,7 @@
               {
                 "op": "ref",
                 "instance": "VCO1",
-                "output": "sin"
+                "output": "sine"
               },
               0.48
             ]
@@ -529,7 +527,7 @@
               {
                 "op": "ref",
                 "instance": "VCO2",
-                "output": "sin"
+                "output": "sine"
               },
               0.48
             ]
@@ -574,7 +572,7 @@
               {
                 "op": "ref",
                 "instance": "VCO3",
-                "output": "sin"
+                "output": "sine"
               },
               0.48
             ]
@@ -619,7 +617,7 @@
               {
                 "op": "ref",
                 "instance": "VCO4",
-                "output": "sin"
+                "output": "sine"
               },
               0.48
             ]
@@ -664,7 +662,7 @@
               {
                 "op": "ref",
                 "instance": "VCO5",
-                "output": "sin"
+                "output": "sine"
               },
               1.6
             ]

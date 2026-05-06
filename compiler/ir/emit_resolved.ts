@@ -439,12 +439,26 @@ class Emitter {
 
   // ── Compile a binary op. ──
   private compileBinary(tag: string, argNodes: [ResolvedExpr, ResolvedExpr], expected?: ScalarType): CompileResult {
+    // `expected` is a hint used to narrow leaf literals (e.g. `add(int_reg, 1)`
+    // wants the `1` to compile as int, not float). For arithmetic ops we can
+    // propagate it down — but never `'bool'`. Arithmetic on float/int args
+    // can't produce bool, so pushing `expected='bool'` into the args (which
+    // happens when this op's result is the cond of a Select, or the left arg
+    // of a comparison whose other side is bool) would wrongly try to narrow
+    // any float literal in the subtree to bool.
+    //
+    // Comparison ops are already exempt (argExpected=undefined) because they
+    // fully redefine their arg types via the comparison itself; we additionally
+    // strip 'bool' from non-bitwise non-comparison ops here. The `secondExpected`
+    // path below also strips 'bool' from the comparison's right-arg expected,
+    // since `secondExpected = l.scalarType` may be 'bool' (e.g. `gt(bool, expr)`).
+    const propagated = expected === 'bool' ? undefined : expected
     const argExpected = BITWISE_TAGS.has(tag) ? 'int' as ScalarType
       : COMPARISON_TAGS.has(tag) ? undefined
-      : expected
+      : propagated
     let l = this.compileNode(argNodes[0], argExpected)
     const secondExpected = COMPARISON_TAGS.has(tag)
-      ? (l.isArray ? 'float' : l.scalarType)
+      ? (l.isArray ? 'float' : (l.scalarType === 'bool' ? undefined : l.scalarType))
       : argExpected
     let r = this.compileNode(argNodes[1], secondExpected)
     if (l.isArray && l.size === 1) l = this.unboxArray(l)
@@ -491,8 +505,10 @@ class Emitter {
 
   // ── Compile a ternary op. ──
   private compileTernary(tag: string, argNodes: [ResolvedExpr, ResolvedExpr, ResolvedExpr], expected?: ScalarType): CompileResult {
+    // For Select: cond must be bool, but arm exprs are arbitrary — don't
+    // push 'bool' into them (same reasoning as compileBinary above).
     const condExpected: ScalarType | undefined = tag === 'Select' ? 'bool' : expected
-    const armExpected = expected
+    const armExpected = expected === 'bool' ? undefined : expected
     let a = this.compileNode(argNodes[0], condExpected)
     let b = this.compileNode(argNodes[1], armExpected)
     let c = this.compileNode(argNodes[2], armExpected)
@@ -570,6 +586,31 @@ class Emitter {
       }
     }
 
+    // Two-pass register update to preserve per-sample read-before-
+    // write isolation for array regs.
+    //
+    // Scalar regs: the writeback is just `register_targets[i] = dst`
+    // and the engine writes after the sample loop body, so
+    // intra-sample reads of older state still see pre-update values.
+    //
+    // Array regs: there's no analogous deferred-writeback mechanism
+    // in the kernel. We need to emit an explicit copy instruction
+    // from the expression's result slot into the reg's persistent
+    // storage slot. If we emit those copies inline as we compile
+    // each reg expression, a later reg expression reading the same
+    // array reg would see post-update values. So pass 1 compiles
+    // every reg expression, collecting (source slot, persistent
+    // slot, size) triples; pass 2 emits the copies, which all sit
+    // at the tail of the per-sample body. Subsequent samples then
+    // read the freshly-copied persistent slot.
+    //
+    // The copy itself is a strided elementwise no-op (`Add x, 0`)
+    // reusing the existing OrcJitEngine elementwise-loop machinery —
+    // no engine changes needed. The in-place case (arraySet on the
+    // reg's own array_reg, used by Delay) is free: srcSlot already
+    // equals the persistent slot, so we skip the copy.
+    type ArrayCopy = { src: NOperand; dst: number; size: number }
+    const arrayCopies: ArrayCopy[] = []
     for (let ri = 0; ri < registerExprs.length; ri++) {
       const expr = registerExprs[ri]
       if (expr === null) {
@@ -579,6 +620,14 @@ class Emitter {
       const regExpected = this.stateRegTypes[ri]
       const r = this.compileNode(expr, regExpected)
       if (r.isArray) {
+        const arrInfo = this.arrayRegMap.get(ri)
+        if (!arrInfo) {
+          throw new Error(`emitProgram: array-result update on non-array reg ${ri}`)
+        }
+        const srcSlot = (r.op as { slot: number }).slot
+        if (srcSlot !== arrInfo.slot) {
+          arrayCopies.push({ src: r.op, dst: arrInfo.slot, size: arrInfo.size })
+        }
         register_targets.push(-1)
       } else {
         const dst = this.allocReg()
@@ -586,6 +635,16 @@ class Emitter {
         this.emit({ tag: 'Add', dst, args: [r.op, { kind: 'const', val: 0, scalar_type: r.scalarType }], loop_count: 1, strides: [], result_type: r.scalarType })
         register_targets.push(dst)
       }
+    }
+    for (const c of arrayCopies) {
+      this.emit({
+        tag: 'Add',
+        dst: c.dst,
+        args: [c.src, { kind: 'const', val: 0, scalar_type: 'float' }],
+        loop_count: c.size,
+        strides: [1, 0],
+        result_type: 'float',
+      })
     }
 
     const out: FlatProgram = {

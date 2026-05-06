@@ -182,20 +182,26 @@ export function traceCycles(prog: ResolvedProgram): ResolvedProgram {
   }
 
   // Rebuild instance decls with rewritten input wires.
+  //
+  // Identity invariant: we mutate `decl.inputs` in place rather than
+  // spread-cloning. The break target's decl is reused unchanged, and so
+  // are decls of any non-cycle instances; mixing fresh spread copies with
+  // reused originals would split InstanceDecl identity, so any nestedOut
+  // ref in the program (assigns, the break target's own inputs, the
+  // synthetic delay's `update` built above) that was not rewalked here
+  // would point at an orphaned original. Mutation keeps every reference
+  // valid. The strata pipeline doesn't share `prog` with anything else
+  // after this call, so in-place mutation is safe.
   const newDecls: BodyDecl[] = []
   for (const decl of prog.body.decls) {
     if (decl.op === 'instanceDecl' && rewriteTargets.has(decl)) {
       const breakSet = rewriteTargets.get(decl)!
-      newDecls.push({
-        ...decl,
-        inputs: decl.inputs.map(i => ({
-          port: i.port,
-          value: rewriteForOwner(i.value, breakSet),
-        })),
-      })
-    } else {
-      newDecls.push(decl)
+      ;(decl as { inputs: typeof decl.inputs }).inputs = decl.inputs.map(i => ({
+        port: i.port,
+        value: rewriteForOwner(i.value, breakSet),
+      }))
     }
+    newDecls.push(decl)
   }
   // Append synthetic delays after instance decls so they appear at the
   // tail of the body's decl list. (Legacy puts them in `sessionDelays`

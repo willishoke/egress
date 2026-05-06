@@ -135,10 +135,96 @@ const selectWithSpecials: EdgeFixture = {
   tolerance: 12,
 }
 
+/** Wholesale array-reg writeback. Produces an inline-array expression
+ *  (here `generate(N, i => i + sampleIndex())`) and assigns it to a
+ *  reg whose init is `zeros(N)` — i.e. `next arr = <expr>` rather than
+ *  the in-place `next arr = arraySet(arr, idx, x)` pattern.
+ *
+ *  Regression test for a JIT bug where the writeback path emitted no
+ *  copy from the expression's fresh array slot into the reg's
+ *  persistent storage slot, leaving the reg permanently zeros (only
+ *  arraySet, used by Delay, worked because it writes in-place to the
+ *  persistent slot). The interpreter handled the case correctly all
+ *  along, so the bug surfaced as a JIT/interp divergence.
+ *
+ *  After 4 samples (buffer 256, sampleIndex per buffer = 0,256,512,...):
+ *  arr[2] on each subsequent sample reads the previous sample's value
+ *  of (sampleIndex_of_previous_sample + 2). With the bug, the JIT
+ *  always reads 0 from the persistent slot; the interpreter reads the
+ *  scan output. */
+const arrayRegWholesaleWriteback: EdgeFixture = {
+  name: 'array_reg_wholesale_writeback',
+  program: {
+    op: 'program',
+    name: 'ArrayRegWholesaleWriteback',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        { op: 'regDecl', name: 'arr', init: { zeros: 4 } as any },
+      ],
+      assigns: [
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'index', args: [{ op: 'reg', name: 'arr' }, 3] } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'arr' },
+          expr: { op: 'generate', count: 4, var: 'i',
+            body: { op: 'add', args: [
+              { op: 'sampleIndex' },
+              { op: 'binding', name: 'i' },
+            ] } } as any },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** Bool-expected propagation through arithmetic. compileBinary's
+ *  `secondExpected = l.scalarType` for comparisons used to forward the
+ *  left arg's `bool` type to the right arg, and then non-comparison /
+ *  non-bitwise binaries forwarded that `bool` straight to their own
+ *  args. So in `eq(bool_value, x + 0.5)`, the `0.5` literal would try
+ *  to narrow to bool and throw — even though arithmetic on float/int
+ *  args can never produce bool.
+ *
+ *  Reproduces in cross_fm_evolved via `Mul(Greater(_,_), LessEq(_,_))`
+ *  inside NoiseLFSR's tick computation, which becomes a Select cond
+ *  after inlining and propagates bool through the comparison's RHS.
+ *
+ *  This fixture isolates the pattern: an `eq` whose left arg returns
+ *  bool, whose right arg is an arithmetic expression with a non-0/1
+ *  float literal. */
+const boolPropagationThroughArith: EdgeFixture = {
+  name: 'bool_propagation_through_arith',
+  program: {
+    op: 'program',
+    name: 'BoolPropagation',
+    ports: { inputs: [{ name: 'x', default: 0.3 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        // eq( gt(x, 0), x * 0.5 + 0.25 )
+        expr: {
+          op: 'eq',
+          args: [
+            { op: 'gt', args: [{ op: 'input', name: 'x' }, 0] },
+            { op: 'add', args: [
+              { op: 'mul', args: [{ op: 'input', name: 'x' }, 0.5] },
+              0.25,
+            ] },
+          ],
+        },
+      }],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
 export const EDGE_FIXTURES: EdgeFixture[] = [
   divByZero,
   sqrtNegative,
   denormalMul,
   stableAccumulator,
   selectWithSpecials,
+  arrayRegWholesaleWriteback,
+  boolPropagationThroughArith,
 ]

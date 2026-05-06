@@ -2,10 +2,16 @@
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/PassManager.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/Analysis/CGSCCPassManager.h>
+#include <llvm/Analysis/LoopAnalysisManager.h>
 #include <llvm/ExecutionEngine/ObjectCache.h>
 #include <llvm/ExecutionEngine/Orc/CompileUtils.h>
+#include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/Passes/OptimizationLevel.h>
+#include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/MD5.h>
 #include <llvm/Support/MemoryBuffer.h>
@@ -198,6 +204,33 @@ static fs::path kernel_cache_dir()
   return base / "tropical" / "kernels" / binary_build_id();
 }
 
+// Read TROPICAL_JIT_OPT_LEVEL env var. Accepts "O0"/"0", "O1"/"1",
+// "O2"/"2", "O3"/"3", "Os", "Oz". Defaults to O2.
+static llvm::OptimizationLevel parse_opt_level()
+{
+  const char * v = std::getenv("TROPICAL_JIT_OPT_LEVEL");
+  if (!v || !*v) return llvm::OptimizationLevel::O2;
+  std::string s = v;
+  if (s == "O0" || s == "0") return llvm::OptimizationLevel::O0;
+  if (s == "O1" || s == "1") return llvm::OptimizationLevel::O1;
+  if (s == "O2" || s == "2") return llvm::OptimizationLevel::O2;
+  if (s == "O3" || s == "3") return llvm::OptimizationLevel::O3;
+  if (s == "Os")             return llvm::OptimizationLevel::Os;
+  if (s == "Oz")             return llvm::OptimizationLevel::Oz;
+  return llvm::OptimizationLevel::O2;
+}
+
+static const char * opt_level_tag(llvm::OptimizationLevel lvl)
+{
+  if (lvl == llvm::OptimizationLevel::O0) return "O0";
+  if (lvl == llvm::OptimizationLevel::O1) return "O1";
+  if (lvl == llvm::OptimizationLevel::O2) return "O2";
+  if (lvl == llvm::OptimizationLevel::O3) return "O3";
+  if (lvl == llvm::OptimizationLevel::Os) return "Os";
+  if (lvl == llvm::OptimizationLevel::Oz) return "Oz";
+  return "O2";
+}
+
 OrcJitEngine::OrcJitEngine()
 {
   llvm::InitializeNativeTarget();
@@ -205,6 +238,8 @@ OrcJitEngine::OrcJitEngine()
 
   object_cache_ = std::make_unique<KernelObjectCache>(kernel_cache_dir());
   KernelObjectCache * cache_ptr = object_cache_.get();
+
+  opt_level_ = parse_opt_level();
 
   auto jit_or_err = llvm::orc::LLJITBuilder()
     .setCompileFunctionCreator(
@@ -222,6 +257,36 @@ OrcJitEngine::OrcJitEngine()
   }
 
   jit_ = std::move(*jit_or_err);
+
+  // Install an IR transform layer that runs LLVM's per-module default
+  // optimization pipeline at the configured level. Without this, LLJIT
+  // does codegen-only — the IR-level passes (loop-vectorize, SLP, DCE,
+  // CSE, const-fold, instcombine) never run, leaving ~2x of kernel
+  // performance on the table on real patches.
+  llvm::OptimizationLevel level = opt_level_;
+  jit_->getIRTransformLayer().setTransform(
+    [level](llvm::orc::ThreadSafeModule TSM,
+            const llvm::orc::MaterializationResponsibility &)
+        -> llvm::Expected<llvm::orc::ThreadSafeModule>
+    {
+      TSM.withModuleDo([level](llvm::Module & M) {
+        llvm::PassBuilder PB;
+        llvm::LoopAnalysisManager LAM;
+        llvm::FunctionAnalysisManager FAM;
+        llvm::CGSCCAnalysisManager CGAM;
+        llvm::ModuleAnalysisManager MAM;
+        PB.registerModuleAnalyses(MAM);
+        PB.registerCGSCCAnalyses(CGAM);
+        PB.registerFunctionAnalyses(FAM);
+        PB.registerLoopAnalyses(LAM);
+        PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+        llvm::ModulePassManager MPM = (level == llvm::OptimizationLevel::O0)
+          ? PB.buildO0DefaultPipeline(level)
+          : PB.buildPerModuleDefaultPipeline(level);
+        MPM.run(M, MAM);
+      });
+      return std::move(TSM);
+    });
 }
 
 bool OrcJitEngine::available() const
@@ -315,8 +380,13 @@ llvm::Expected<NumericKernelFn> OrcJitEngine::compile_flat_program(
   }
 
   // Serialize to a canonical cache key (param ptrs replaced by ordinal).
+  // The opt level is part of the key — different optimization levels
+  // produce different kernels; without this, a kernel JIT'd at one level
+  // would be served from cache when the user runs at another level.
   std::string cache_key;
   cache_key += "flat:";
+  cache_key += opt_level_tag(opt_level_);
+  cache_key += ":";
   {
     auto append = [&](const void * data, std::size_t size) {
       cache_key.append(static_cast<const char *>(data), size);
@@ -944,6 +1014,92 @@ llvm::Expected<NumericKernelFn> OrcJitEngine::compile_flat_program(
         else
           scalar_tvs[i] = resolve_typed(instr.args[i]);
       }
+
+      // ── Vectorized fast path ───────────────────────────────────────────
+      // For Float-result f64 SIMD-friendly ops with all strides ∈ {0, 1},
+      // emit a single <N x double> load/op/store per arg instead of a
+      // runtime LLVM scalar loop. Lets LLVM's backend pick a SIMD width
+      // matching the host vector unit; the equivalent scalar-loop form
+      // is not vectorized by loop-vectorize/SLP on this codebase.
+      auto is_simd_float_op = [](OpTag t) {
+        return t == OpTag::Add || t == OpTag::Sub
+            || t == OpTag::Mul || t == OpTag::Div
+            || t == OpTag::Neg || t == OpTag::Abs
+            || t == OpTag::Sqrt;
+      };
+      bool simd_ok = (instr.result_type == ST::Float)
+                  && is_simd_float_op(instr.tag)
+                  && (instr.strides.size() == nargs);
+      for (std::size_t i = 0; simd_ok && i < nargs; ++i)
+      {
+        const uint8_t s = instr.strides[i];
+        if (s != 0 && s != 1) simd_ok = false;
+      }
+      if (simd_ok)
+      {
+        const uint32_t N = instr.loop_count;
+        llvm::Type * vec_ty = llvm::FixedVectorType::get(f64_ty, N);
+        llvm::Value * dst_ptr_v = load_array_ptr_f(instr.dst);
+
+        // Build N-wide operand vectors: vector load for stride==1,
+        // splat-broadcast for stride==0.
+        std::vector<llvm::Value *> vops(nargs, nullptr);
+        for (std::size_t i = 0; i < nargs; ++i)
+        {
+          if (instr.strides[i] == 1)
+          {
+            vops[i] = builder.CreateAlignedLoad(vec_ty, arr_ptrs[i],
+                                                llvm::Align(sizeof(double)));
+          }
+          else
+          {
+            llvm::Value * sv = coerce(scalar_tvs[i].first,
+                                      scalar_tvs[i].second, ST::Float);
+            vops[i] = builder.CreateVectorSplat(N, sv);
+          }
+        }
+
+        llvm::Value * vres = nullptr;
+        switch (instr.tag)
+        {
+          case OpTag::Add: vres = builder.CreateFAdd(vops[0], vops[1]); break;
+          case OpTag::Sub: vres = builder.CreateFSub(vops[0], vops[1]); break;
+          case OpTag::Mul: vres = builder.CreateFMul(vops[0], vops[1]); break;
+          case OpTag::Div:
+          {
+            // Match scalar Div semantics: divide-by-zero → 0.
+            llvm::Value * zv = llvm::ConstantFP::get(vec_ty, 0.0);
+            llvm::Value * is_zero = builder.CreateFCmpOEQ(vops[1], zv);
+            llvm::Value * dv = builder.CreateFDiv(vops[0], vops[1]);
+            vres = builder.CreateSelect(is_zero, zv, dv);
+            break;
+          }
+          case OpTag::Neg:  vres = builder.CreateFNeg(vops[0]); break;
+          case OpTag::Abs:
+          {
+            llvm::FunctionCallee fabs_v = llvm::Intrinsic::getOrInsertDeclaration(
+              module.get(), llvm::Intrinsic::fabs, {vec_ty});
+            vres = builder.CreateCall(fabs_v, {vops[0]});
+            break;
+          }
+          case OpTag::Sqrt:
+          {
+            llvm::FunctionCallee sqrt_v = llvm::Intrinsic::getOrInsertDeclaration(
+              module.get(), llvm::Intrinsic::sqrt, {vec_ty});
+            vres = builder.CreateCall(sqrt_v, {vops[0]});
+            break;
+          }
+          default: break;  // is_simd_float_op gate prevents this
+        }
+
+        if (vres)
+        {
+          builder.CreateAlignedStore(vres, dst_ptr_v,
+                                     llvm::Align(sizeof(double)));
+          continue;  // skip scalar fallback below
+        }
+      }
+      // ── End vectorized fast path ───────────────────────────────────────
 
       llvm::Value * loop_n    = builder.getInt64(instr.loop_count);
       llvm::Value * dst_ptr   = load_array_ptr_f(instr.dst);

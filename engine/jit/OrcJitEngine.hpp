@@ -11,6 +11,7 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/Passes/OptimizationLevel.h>
 
 #include <filesystem>
 
@@ -169,5 +170,6 @@ class OrcJitEngine
     mutable std::mutex jit_mutex_;
     std::unordered_map<std::string, NumericKernelFn> kernel_cache_;
     std::unique_ptr<KernelObjectCache> object_cache_;
+    llvm::OptimizationLevel opt_level_ = llvm::OptimizationLevel::O2;
 };
 } // namespace tropical_jit

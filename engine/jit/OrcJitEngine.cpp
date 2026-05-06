@@ -945,6 +945,92 @@ llvm::Expected<NumericKernelFn> OrcJitEngine::compile_flat_program(
           scalar_tvs[i] = resolve_typed(instr.args[i]);
       }
 
+      // ── Vectorized fast path ───────────────────────────────────────────
+      // For Float-result f64 SIMD-friendly ops with all strides ∈ {0, 1},
+      // emit a single <N x double> load/op/store per arg instead of a
+      // runtime LLVM scalar loop. Lets LLVM's backend pick a SIMD width
+      // matching the host vector unit; the equivalent scalar-loop form
+      // is not vectorized by loop-vectorize/SLP on this codebase.
+      auto is_simd_float_op = [](OpTag t) {
+        return t == OpTag::Add || t == OpTag::Sub
+            || t == OpTag::Mul || t == OpTag::Div
+            || t == OpTag::Neg || t == OpTag::Abs
+            || t == OpTag::Sqrt;
+      };
+      bool simd_ok = (instr.result_type == ST::Float)
+                  && is_simd_float_op(instr.tag)
+                  && (instr.strides.size() == nargs);
+      for (std::size_t i = 0; simd_ok && i < nargs; ++i)
+      {
+        const uint8_t s = instr.strides[i];
+        if (s != 0 && s != 1) simd_ok = false;
+      }
+      if (simd_ok)
+      {
+        const uint32_t N = instr.loop_count;
+        llvm::Type * vec_ty = llvm::FixedVectorType::get(f64_ty, N);
+        llvm::Value * dst_ptr_v = load_array_ptr_f(instr.dst);
+
+        // Build N-wide operand vectors: vector load for stride==1,
+        // splat-broadcast for stride==0.
+        std::vector<llvm::Value *> vops(nargs, nullptr);
+        for (std::size_t i = 0; i < nargs; ++i)
+        {
+          if (instr.strides[i] == 1)
+          {
+            vops[i] = builder.CreateAlignedLoad(vec_ty, arr_ptrs[i],
+                                                llvm::Align(sizeof(double)));
+          }
+          else
+          {
+            llvm::Value * sv = coerce(scalar_tvs[i].first,
+                                      scalar_tvs[i].second, ST::Float);
+            vops[i] = builder.CreateVectorSplat(N, sv);
+          }
+        }
+
+        llvm::Value * vres = nullptr;
+        switch (instr.tag)
+        {
+          case OpTag::Add: vres = builder.CreateFAdd(vops[0], vops[1]); break;
+          case OpTag::Sub: vres = builder.CreateFSub(vops[0], vops[1]); break;
+          case OpTag::Mul: vres = builder.CreateFMul(vops[0], vops[1]); break;
+          case OpTag::Div:
+          {
+            // Match scalar Div semantics: divide-by-zero → 0.
+            llvm::Value * zv = llvm::ConstantFP::get(vec_ty, 0.0);
+            llvm::Value * is_zero = builder.CreateFCmpOEQ(vops[1], zv);
+            llvm::Value * dv = builder.CreateFDiv(vops[0], vops[1]);
+            vres = builder.CreateSelect(is_zero, zv, dv);
+            break;
+          }
+          case OpTag::Neg:  vres = builder.CreateFNeg(vops[0]); break;
+          case OpTag::Abs:
+          {
+            llvm::FunctionCallee fabs_v = llvm::Intrinsic::getOrInsertDeclaration(
+              module.get(), llvm::Intrinsic::fabs, {vec_ty});
+            vres = builder.CreateCall(fabs_v, {vops[0]});
+            break;
+          }
+          case OpTag::Sqrt:
+          {
+            llvm::FunctionCallee sqrt_v = llvm::Intrinsic::getOrInsertDeclaration(
+              module.get(), llvm::Intrinsic::sqrt, {vec_ty});
+            vres = builder.CreateCall(sqrt_v, {vops[0]});
+            break;
+          }
+          default: break;  // is_simd_float_op gate prevents this
+        }
+
+        if (vres)
+        {
+          builder.CreateAlignedStore(vres, dst_ptr_v,
+                                     llvm::Align(sizeof(double)));
+          continue;  // skip scalar fallback below
+        }
+      }
+      // ── End vectorized fast path ───────────────────────────────────────
+
       llvm::Value * loop_n    = builder.getInt64(instr.loop_count);
       llvm::Value * dst_ptr   = load_array_ptr_f(instr.dst);
       llvm::Value * idx_alloc = builder.CreateAlloca(i64_ty, nullptr, "ew_idx");

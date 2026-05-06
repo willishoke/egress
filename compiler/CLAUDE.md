@@ -256,7 +256,7 @@ by `loadStdlibFromSources()`.
 ## FFI bridge (`runtime/`)
 
 - `bindings.ts` — koffi declarations matching `tropical_c.h`. Loads
-  `libtropical.dylib` from `build/` or `build-profile/`.
+  `libtropical.dylib` from `build/`.
 - `runtime.ts` — `Runtime` wraps `tropical_runtime_t`. FinalizationRegistry
   for GC-driven cleanup.
 - `audio.ts` — `DAC` wraps `tropical_dac_t`. Static `listDevices()`.

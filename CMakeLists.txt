@@ -9,9 +9,6 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(TROPICAL_BUILD_PYTHON "Build ctypes-based Python package support (installs tropical/ package)" ON)
-# Profiling overhead is minimal (atomic increments + rdtsc, gated by #ifdef).
-# ON by default — pass -DTROPICAL_PROFILE=OFF to disable.
-option(TROPICAL_PROFILE "Enable profiling counters and timing instrumentation" ON)
 option(TROPICAL_LLVM_STATIC "Link LLVM statically into libtropical for self-contained wheel distribution" OFF)
 
 # nlohmann/json — header-only JSON library (for plan loading)
@@ -74,9 +71,6 @@ if(TROPICAL_LLVM_STATIC)
 endif()
 
 target_compile_features(tropical_core PRIVATE cxx_std_20)
-if(TROPICAL_PROFILE)
-    target_compile_definitions(tropical_core PRIVATE TROPICAL_PROFILE=1)
-endif()
 target_link_libraries(tropical_core PRIVATE rtaudio nlohmann_json::nlohmann_json)
 target_include_directories(tropical_core PRIVATE engine)
 set_target_properties(tropical_core PROPERTIES OUTPUT_NAME "tropical")

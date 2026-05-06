@@ -205,7 +205,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO_bass",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "mul",
@@ -223,11 +223,10 @@
       {
         "op": "instanceDecl",
         "name": "Env_bass",
-        "program": "ADEnvelope",
+        "program": "EnvExpDecay",
         "inputs": {
-          "attack": 0.06,
-          "decay": 0.32,
-          "gate": {
+          "decay": 0.9995,
+          "trigger": {
             "op": "ref",
             "instance": "Clock",
             "output": "output"
@@ -242,7 +241,7 @@
           "audio": {
             "op": "ref",
             "instance": "VCO_bass",
-            "output": "sin"
+            "output": "sine"
           },
           "cv": {
             "op": "ref",
@@ -254,7 +253,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO_pad_A",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "ref",
@@ -266,7 +265,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO_pad_C",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "ref",
@@ -278,7 +277,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO_pad_E",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "ref",
@@ -290,7 +289,7 @@
       {
         "op": "instanceDecl",
         "name": "VCO_pad_G",
-        "program": "VCO",
+        "program": "SinOsc",
         "inputs": {
           "freq": {
             "op": "ref",
@@ -302,13 +301,10 @@
       {
         "op": "instanceDecl",
         "name": "Env_pad",
-        "program": "ADSREnvelope",
+        "program": "EnvExpDecay",
         "inputs": {
-          "gate": 1,
-          "attack": 1.5,
-          "decay": 0.3,
-          "sustain": 0.9,
-          "release": 2
+          "decay": 0.9995,
+          "trigger": 1
         }
       },
       {
@@ -333,12 +329,12 @@
                       {
                         "op": "ref",
                         "instance": "VCO_pad_A",
-                        "output": "sin"
+                        "output": "sine"
                       },
                       {
                         "op": "ref",
                         "instance": "VCO_pad_C",
-                        "output": "sin"
+                        "output": "sine"
                       }
                     ]
                   },
@@ -348,12 +344,12 @@
                       {
                         "op": "ref",
                         "instance": "VCO_pad_E",
-                        "output": "sin"
+                        "output": "sine"
                       },
                       {
                         "op": "ref",
                         "instance": "VCO_pad_G",
-                        "output": "sin"
+                        "output": "sine"
                       }
                     ]
                   }

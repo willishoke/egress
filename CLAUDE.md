@@ -11,7 +11,6 @@ delays and oscillators don't click.
 ```bash
 make build          # C++ core, outputs build/libtropical.dylib
 make mcp-ts         # build + launch MCP server on stdio (requires Bun)
-make profile        # build with profiling instrumentation
 make validate       # build + bun test + ctest + stdlib validator
 make clean          # remove build directories
 ```

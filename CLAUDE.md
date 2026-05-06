@@ -1,115 +1,191 @@
 # tropical
 
-Realtime audio synthesis with LLVM ORC JIT. The entire program — a graph of DSP program instances — compiles to a single native kernel that runs per-sample in an audio callback. No interpreter, no module boundaries at runtime.
+Realtime audio synthesis. The whole patch — every oscillator, filter,
+envelope, and wire — compiles to a single per-sample kernel. There is no
+runtime interpreter and no module boundary in the audio callback. Every
+edit hot-swaps a fresh kernel; matching state transfers by name so
+delays and oscillators don't click.
 
 ## Build
 
 ```bash
 make build          # C++ core, outputs build/libtropical.dylib
 make mcp-ts         # build + launch MCP server on stdio (requires Bun)
+make validate       # build + bun test + ctest + stdlib validator
 make clean          # remove build directories
 ```
 
-**Requirements:** CMake 3.20+, C++20, LLVM >= 15 (Homebrew: `/opt/homebrew/opt/llvm`), Bun (for MCP/TUI).
+**Requirements:** CMake 3.20+, C++20, LLVM ≥ 19 (Homebrew: `/opt/homebrew/opt/llvm`), Bun.
 
 ## Test
 
 ```bash
-cmake --build build -j4 && ctest --test-dir build   # C++ tests (JIT + C API)
+cmake --build build -j4 && ctest --test-dir build   # C++ tests (JIT + C API, no audio device)
 bun test                                              # TS compiler tests
-bun test --exclude compiler/apply_plan.test.ts        # TS tests without native FFI
+bun test --exclude compiler/apply_plan.test.ts        # pure-TS subset (no native FFI)
 ```
 
-C++ tests (`engine/tests/test_module_process.cpp`) exercise the C API and JIT without an audio device. TS tests (`compiler/*.test.ts`) cover flattening, array wiring, expression emission, and more.
+`apply_plan.test.ts` and the WASM-vs-JIT equivalence tests load
+`build/libtropical.dylib` via koffi. Run `make build` first or use the
+exclude form above.
 
-**Note:** `apply_plan.test.ts` loads `build/libtropical.dylib` via FFI. If the native lib isn't built, Bun will segfault (null dereference at load time — not a test failure, a crash). Run `make build` first, or use the `--exclude` form above to run only pure TS tests.
+## Ideological backbone
 
-## Architecture
+If you want a single sentence to hang the whole codebase off:
 
-Three layers, one stable boundary:
+> tropical is a cartesian category of typed signal-flow graphs with a
+> guarded trace, where the guard is the unit-delay endomorphism and
+> `traceCycles` is the trace operator's implementation.
+
+That's not load-bearing vocabulary you have to use day-to-day, but it
+*is* the shape of the system: programs are graphs, parallel composition
+is the cartesian product, sequential composition is graph wiring,
+feedback is a trace and the trace is causal because every cycle must
+go through a delay. The strata pipeline is what makes this concrete:
+each pass takes a graph, retires some structure that's already been
+consumed, and hands the next pass a smaller graph in the same category.
+Backends interpret the final, fully-reduced graph into different runtime
+targets.
+
+In practical terms, every pass in `compiler/parse/`, `compiler/`, and
+`compiler/ir/` is structure-preserving — it produces an IR that's
+strictly poorer than its input, where the dropped structure is something
+the next pass doesn't have to reason about. Reading the pipeline from
+top to bottom:
 
 ```
-compiler/             TS: expression system, JSON stdlib loading, combinators,
-                      flattening, instruction emission
-  compiler/runtime/   FFI bridge to C++ (koffi bindings, Runtime, DAC, Param)
-engine/               C++: plan parsing, LLVM JIT, per-sample execution, audio output
-  engine/c_api/       Stable C API — the boundary between TS and C++
-  engine/jit/         LLVM ORC JIT engine
-  engine/runtime/     FlatRuntime (plan loading, kernel execution)
-  engine/dac/         Audio output (RtAudio)
-mcp/                  MCP server — primary agent interface over stdio
-patches/              Example patches (tropical_program_2 JSON)
-stdlib/               Built-in program types as tropical_program_2 files (19 types)
+.trop source / tropical_program_2 JSON / MCP mutations
+  │
+  │  parse  — drops layout, comments, sugar (`in [lo, hi]` → clamp/select)
+  ▼
+ParsedProgram (compiler/parse/nodes.ts)
+  refs are NameRefNode placeholders; the parser does no scope analysis
+  │
+  │  raise  (legacy JSON ingest) — pass-through into the same parsed shape
+  ▼
+ParsedProgram
+  │
+  │  elaborate (compiler/ir/elaborator.ts) — drops names
+  │              every NameRef is replaced by a direct decl-object pointer.
+  │              after this point, no string lookups, no scope walks.
+  ▼
+ResolvedProgram (compiler/ir/nodes.ts)
+  graph IR with cycles allowed (delays + feedback)
+  │
+  │  strata pipeline (compiler/ir/strata.ts):
+  │  ────────────────────────────────────────
+  │   specialize       — drops type parameters
+  │   sumLower         — drops sum types (variants → tag + scalar bundles)
+  │   traceCycles      — implements the guarded trace (cycles → synthetic DelayDecls)
+  │   inlineInstances  — drops nesting (inner bodies lifted, _liftedFrom kept as provenance)
+  │   arrayLower       — drops shapes and combinators (fold/generate/let/etc. unroll)
+  ▼
+ResolvedProgram (post-strata)
+  scalar-only · monomorphic · acyclic · non-nested · combinator-free.
+  the smallest sub-IR sufficient for any per-sample evaluator.
 ```
 
-### Data flow
+Sessions (the MCP/runtime view of a graph in flight) plug into this
+pipeline through one extra step that lifts a partially-typed session
+graph into the same `ResolvedProgram` shape the per-program path
+produces:
 
 ```
-Program (JSON / MCP tools)
-  → ProgramNode loading + type registration (TS-only, no C++ calls)
-  → Expression tree construction (ExprNode)
-  → Flattening (inline all instances → single expression set)
-  → Combinator expansion (unroll generate/fold/chain/etc.)
-  → Array lowering (static-shape array ops → scalar primitives)
-  → Instruction emission (ExprNode → FlatProgram)
-  → JSON serialization (tropical_plan_4)
-  ─── C API boundary (tropical_c.h, koffi FFI) ───
-  → NumericProgramParser (JSON → FlatProgram struct)
-  → JIT compilation (FlatProgram → LLVM IR → native kernel)
-  → FlatRuntime (per-sample execution, double-buffered hot-swap)
-  → Audio output (RtAudio / CoreAudio)
+SessionState  (instances + wiring + dac.out + params)
+  │
+  │  materializeSession (compiler/ir/materialize_session.ts)
+  │     lift a partially-typed session graph into a top-level
+  │     ResolvedProgram. handles gateable wraps, paramDecl synthesis,
+  │     session-level delay() extraction.
+  ▼
+ResolvedProgram (top-level synthetic)  →  strata pipeline  →  post-strata
 ```
 
-### Schema versions
+## What sits below post-strata
 
-There are two distinct JSON schemas — don't confuse them:
+Three *backends* consume the post-strata `ResolvedProgram`. They are
+not further compiler stages — they are interpretations of the same
+fully-reduced IR into different targets, and the equivalence test
+suites assert they agree pointwise.
+
+```
+post-strata ResolvedProgram
+        │
+        ├─→ compileResolved (compiler/ir/compile_resolved.ts)
+        │      buildSlotMaps + emit_resolved → tropical_plan_4 JSON
+        │      ──── C API boundary (engine/c_api/tropical_c.h, koffi FFI) ────
+        │      NumericProgramParser → FlatProgram struct
+        │      OrcJitEngine → LLVM IR → native kernel
+        │      FlatRuntime → per-sample loop, double-buffered hot-swap
+        │      TropicalDAC (RtAudio) → audio output
+        │
+        ├─→ interpret_resolved (compiler/interpret_resolved.ts)
+        │      pure-TS evaluator over ResolvedExpr; no FFI.
+        │      independent oracle for jit_interp_equiv tests.
+        │
+        └─→ emit_wasm (compiler/emit_wasm.ts + compiler/wasm_memory_layout.ts)
+               tropical_plan_4 → WebAssembly bytes + linear-memory layout
+               compilePlan (web/host/compiler.ts)
+               WasmRuntime (web/worklet/runtime.ts) — same hot-swap logic as FlatRuntime,
+               state transfer by name, smoothstep fade
+               AudioWorkletProcessor (web/worklet/processor.ts) → audio output
+```
+
+Param/Trigger handles are the only thing that differs between
+backends. Wiring expressions reference parameters by name
+(`{op:'param', name}` / `{op:'trigger', name}`); the materializer
+resolves names to handles at compile time. For the JIT path the handle
+is a native pointer (`tropical_param_t`); for the WASM path it's a
+SAB slot index, stringified to keep the `tropical_plan_4` schema
+backend-agnostic.
+
+## Equivalence gates
+
+The pipeline is correct only if every pass and every backend agrees
+with the per-sample semantics on the input. Four test suites pin that
+down by cross-checking outputs:
+
+- `compile_session_equiv.test.ts` — fixture corpus through the full
+  session pipeline produces a stable `tropical_plan_4`.
+- `jit_interp_equiv.test.ts` — JIT and `interpret_resolved` agree
+  sample-for-sample on the same post-strata IR.
+- `wasm_vs_jit_equiv.test.ts` — WASM and JIT agree sample-for-sample.
+- `web_plans_vs_jit.test.ts` — every precompiled plan in
+  `web/dist/patches/` matches the JIT output.
+
+Any disagreement is a strata, materialize, or backend bug, and the
+suite localises it.
+
+## Schema versions
+
+Two distinct JSON schemas; do not confuse them.
 
 | Schema | Produced by | Purpose |
 |--------|-------------|---------|
-| `tropical_program_2` | `compiler/program.ts` | **Primary.** Unified ExprNode-shaped program (ports + body block of decls/assigns) |
-| `tropical_plan_4` | `compiler/flatten.ts` + `emit_numeric.ts` | Flat instruction stream sent to C++ JIT — the one that matters for audio |
+| `tropical_program_2` | `compiler/program.ts`, `compiler/parse/raise.ts` | The high-detail input shape: a program with typed ports, a body block of decls/assigns, optionally generic in `type_params`. Authored by humans (in `.trop`) or by agents (over MCP). |
+| `tropical_plan_4`    | `compiler/ir/compile_resolved.ts` (`compiler/flat_plan.ts` schema) | The low-detail output: a flat instruction stream over typed scalar slots. The C++ JIT and the WASM emitter both consume this shape. |
 
-## Compiler layer (`compiler/`)
+Going from the first to the second without losing meaning is exactly
+what the strata pipeline does.
 
-The TypeScript layer handles everything from program definition through instruction emission. No audio processing happens here.
+## Layout
 
-**Expression system** (`expr.ts`) — `ExprNode` is the universal IR: a recursive JSON union type (number, boolean, array, or `{op, ...}` object). `SignalExpr` wraps it with static shape tracking. All program I/O is defined as expression trees. Compile-time combinators (`generate`, `fold`, `chain`, `map2`, etc.) are embedded directly in JSON and lowered by `lower_arrays.ts` — no TS wrapper functions needed.
-
-**Program schema** (`program.ts`) — `ProgramNode` (`tropical_program_2`) is the unified IR: an ExprNode of op `program` with typed ports and a body `block` of decls (reg_decl, delay_decl, instance_decl, program_decl) and assigns (output_assign, next_update). `loadStdlib()` indexes all stdlib files by name, then loads them on demand via a `typeResolver` callback — dependencies resolve recursively regardless of file ordering, with circular dependency detection.
-
-**Program types** (`program_types.ts`) — Pure data types: `ProgramDef` (slot-indexed IR for the flattener), `ProgramType`, `ProgramInstance`. No DSL — types are built from ProgramNode by `loadProgramDef()` in `session.ts`.
-
-**Standard library** (`stdlib/*.json`) — 19 built-in program types as human-readable `tropical_program_2` files. Transcendentals (Sin, Cos, Tanh, Exp, Log, Pow) are programs, not primitives — swap the JSON to change the approximation. Shared primitives (OnePole, AllpassDelay, CombDelay, SoftClip, CrossFade) compose into higher-level types (e.g. LadderFilter uses 4 OnePole instances). Also includes Clock, LadderFilter, NoiseLFSR, BitCrusher, VCA, Phaser/Phaser16, and a generic `Delay` parameterized by `type_args: {N}` (default N=44100).
-
-**Flattening** (`flatten.ts`) — The critical step. Inlines all instance expressions, resolves inter-instance references, expands nested calls, converts delays to register ops. Output is a `tropical_plan_4` JSON. Uses WeakMap memoization for DAG sharing. Automatically resolves feedback cycles (A→B→A or A→A) by inserting synthetic one-sample delay registers — self-refs are detected in a pre-pass, inter-instance cycles via Tarjan's SCC.
-
-**Array lowering** (`lower_arrays.ts`) — Lowers first-class array ops (zeros, reshape, transpose, slice, reduce, broadcast_to, map, matmul) and compile-time combinators (generate, iterate, fold, scan, map2, zip_with, chain, let) to scalar primitives via static unrolling. All shapes are compile-time constants.
-
-**Instruction emission** (`emit_numeric.ts`) — Walks flattened ExprNode trees, emits `FlatProgram` instruction stream with typed operands (const, input, reg, array_reg, state_reg, param, rate, tick).
-
-**Port types and graph utilities** (`term.ts`, `compiler.ts`) — `PortType` describes signal port types (scalar, array, product). `compiler.ts` provides dependency graph construction, topological sort (Kahn's with level grouping), and cycle detection (Tarjan's SCC). The flattener uses these for execution ordering and automatic feedback cycle resolution.
-
-**FFI bridge** (`runtime/bindings.ts`, `runtime.ts`, `audio.ts`, `param.ts`) — koffi declarations mirroring `tropical_c.h`. `Runtime` wraps `tropical_runtime_t` with FinalizationRegistry. `Param`/`Trigger` are referenced by name in wiring expressions; the materializer resolves names to FFI handles at compile time.
-
-## Engine (`engine/`)
-
-C++20, header-heavy (templates + inlining for audio-thread performance).
-
-**C API** (`c_api/tropical_c.h`) — Stable boundary. Opaque handles for FlatRuntime, ControlParam, DAC. Thread-local error string via `tropical_last_error()`. All external access goes through here.
-
-**Plan parsing** (`runtime/NumericProgramParser.hpp`) — Thin deserializer: reads `tropical_plan_4` JSON → `FlatProgram` struct. No expression tree walking — just reads the pre-compiled instruction stream.
-
-**JIT** (`jit/OrcJitEngine.hpp/.cpp`) — Singleton LLVM ORC engine. `compile_flat_program()` generates typed LLVM IR (f64/i64/i1 with explicit coercion) and compiles to native code. Transcendentals are not a JIT primitive — they are stdlib program files that inline at flatten time. Kernel object cache at `~/.cache/tropical/kernels/<build-id>/` with auto-invalidation on dylib rebuild.
-
-**FlatRuntime** (`runtime/FlatRuntime.hpp/.cpp`) — Double-buffered kernel hot-swap. `load_plan()` compiles to the inactive slot, transfers matching state by register/array name, atomically swaps. `process()` runs the kernel, snapshots trigger params, applies smoothstep fade envelope (2048-sample Hermite curve).
-
-**Audio output** (`dac/TropicalDAC.hpp`) — Templated RtAudio driver. Device watcher thread (50ms poll), disconnect recovery with 500ms backoff, callback timing stats.
-
-## MCP server (`mcp/server.ts`)
-
-Primary agent interface. Runs on stdio via `@modelcontextprotocol/sdk`. Maintains `SessionState` and exposes tools for program management, wiring, audio control, and program I/O. Key tools: `define_program`, `add_instance`, `wire` (batched set/remove), `set_output`, `export_program`, `load`/`save`/`merge`. Every wiring mutation triggers `wire()` → `applyFlatPlan()` → full recompile and hot-swap.
-
-The core workflow: **patch → listen → export**. Agents add instances and wire them up, listen to the result via `start_audio`, then call `export_program` to crystallize the session into a reusable program type that can be instantiated, replicated, or saved.
+```
+compiler/             TS: parse → elaborate → strata → emit
+  parse/              .trop surface syntax + JSON-ingest adapter (raise.ts)
+  ir/                 strata pipeline + resolved-IR emit boundary
+  runtime/            FFI bridge to C++ (koffi bindings, Runtime, DAC, Param)
+engine/               C++: plan parsing, LLVM JIT, per-sample execution, audio output
+  c_api/              Stable C API — the boundary between TS and C++
+  jit/                LLVM ORC JIT engine
+  runtime/            FlatRuntime (plan loading, kernel execution)
+  dac/                Audio output (RtAudio)
+mcp/                  MCP server — primary agent interface over stdio
+web/                  WASM/browser backend — host (main thread), worklet (audio thread), build
+patches/              Example patches (tropical_program_2 JSON)
+stdlib/               31 .trop programs; see stdlib/README.md
+design/               Architecture and design notes (architecture.md is authoritative)
+```
 
 ## Conventions
 
@@ -117,4 +193,5 @@ The core workflow: **patch → listen → export**. Agents add instances and wir
 - Program types: PascalCase (`LadderFilter`, `OnePole`, `Clock`)
 - Input/output names: lowercase (`freq`, `signal`, `out`, `saw`)
 - C++ is header-heavy by design (templates, inlining for audio perf)
-- JIT failures are fatal — no interpreter fallback
+- JIT failures are fatal — no interpreter fallback on the audio path
+  (`interpret_resolved` is an oracle for tests, not a runtime)

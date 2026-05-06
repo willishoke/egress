@@ -2,7 +2,11 @@
 
 Realtime audio synthesis driven by Claude Code over MCP.
 
-Describe a program — oscillators, filters, envelopes, effects, wiring — and tropical compiles the entire signal graph into a single native kernel via LLVM ORC JIT. No interpreter, no module boundaries at runtime. Every wiring change hot-swaps a new kernel without interrupting playback.
+Describe a patch — oscillators, filters, envelopes, effects, wiring — and
+tropical compiles the entire signal graph into a single per-sample
+kernel. Native runtime via LLVM ORC JIT, browser runtime via
+WebAssembly. Every wiring change hot-swaps a fresh kernel; matching
+state transfers by name so delay lines and oscillators don't click.
 
 ## Install
 
@@ -10,136 +14,123 @@ Describe a program — oscillators, filters, envelopes, effects, wiring — and 
 brew install <tap>/tropical    # macOS — coming soon
 ```
 
-Or [build from source](INSTALL.md). Requires LLVM >= 15, CMake, and Bun.
+Or [build from source](INSTALL.md). Requires LLVM ≥ 19, CMake, and Bun.
 
-### Connect with Claude Code
+## Quick start
 
-tropical ships with `.mcp.json` — open the repo in Claude Code and the `tropical` toolset is available immediately. Then:
+### Through Claude Code (MCP)
+
+tropical ships with `.mcp.json`. Open the repo in Claude Code and the
+`tropical` toolset is wired up immediately. Then talk to it:
 
 > Load `patches/compressor_harmonics.json` and start audio.
 
-That's it. The MCP server handles compilation, kernel loading, and audio output. Claude can also build patches from scratch:
+> Define a sine oscillator, run it through a ladder filter with
+> resonance at 0.8, and start audio.
 
-> Define a sine oscillator, run it through a ladder filter with resonance at 0.8, and start audio.
+The MCP server handles compilation, kernel loading, and audio output.
+22 tools cover program definition, instance/wiring graph editing,
+audio control, and patch I/O — see [`mcp/CLAUDE.md`](mcp/CLAUDE.md).
 
-### MCP tools
+### Browser
 
-The server exposes 16 tools covering the full workflow:
+The same compiler emits WebAssembly. Curated patches are precompiled
+offline and served as JSON; the browser fetches a plan, emits a WASM
+module, and runs it in an `AudioWorkletProcessor`.
 
-**Program management** — `define_program`, `add_instance`, `remove_instance`, `list_programs`, `list_instances`, `get_info`
+```bash
+bun web/build.ts        # build web/dist/
+bun web/dev.ts          # dev server (sets COOP/COEP for SharedArrayBuffer)
+```
 
-**Wiring** — `wire` (batched set/remove in a single recompile), `list_wiring`
-
-**Output** — `set_output` (declaratively set the full output list)
-
-**Control** — `set_param`, `list_params`
-
-**Program I/O** — `load`, `save`, `merge`
-
-**Audio** — `start_audio`, `stop_audio`, `audio_status`
-
-Every wiring mutation triggers a full recompile and atomic kernel swap.
+See [`web/CLAUDE.md`](web/CLAUDE.md).
 
 ## Programs
 
-19 built-in DSP program types, all defined as human-readable JSON and compiled to native code at runtime:
+31 stdlib programs ship as `.trop` source files in
+[`stdlib/`](stdlib/README.md). Math functions, filters, delays,
+oscillators, effects, envelopes, sequencers, utility — every type is
+just code. `LadderFilter` is four `OnePole`s plus a `Tanh`; `Pow` is
+`Exp(y · Log(x))`. Swap a file to change the math.
 
-| Program | What it does |
-|---------|-------------|
-| **Sin / Cos / Tanh** | Polynomial approximations (7th-order minimax for sin/cos, Padé for tanh) |
-| **Exp / Log / Pow** | Cody-Waite + Horner polynomial for exp; exponent extraction + Remez for log; `exp(y · log(x))` for pow |
-| **OnePole** | One-pole lowpass filter with tanh saturation |
-| **AllpassDelay** | First-order allpass, transposed direct form II |
-| **CombDelay** | Feedback comb filter |
-| **SoftClip** | Soft clipper (tanh waveshaper) |
-| **CrossFade** | Linear crossfade between two signals |
-| **LadderFilter** | 4-pole Moog-style resonant filter (composed from 4 OnePole instances) |
-| **Clock** | Clock/trigger generator with ratio array |
-| **VCA** | Voltage-controlled amplifier |
-| **Phaser / Phaser16** | 4 or 16 stage allpass phaser |
-| **BitCrusher** | Bit depth and sample rate reduction |
-| **NoiseLFSR** | Linear feedback shift register noise |
-| **Delay** | Fixed-length delay line, parameterized by `N` samples (e.g. `{program:"Delay", type_args:{N:8}}`) |
+Highlights:
 
-Complex types compose from simpler ones — LadderFilter is a few hundred lines of JSON using OnePole and Sin instances, not an opaque blob. Even transcendentals are programs: swap `stdlib/Sin.json` to change the approximation. New program types can be defined at runtime via `define_program` — no rebuild required.
+- **Math** — `Sin`, `Cos`, `Tanh`, `Exp`, `Log`, `Pow` as polynomial
+  approximations
+- **Filters** — `OnePole`, `LadderFilter` (4-pole Moog), `SVF`,
+  `SoftClip`, `BitCrusher`
+- **Delays** — `AllpassDelay`, `CombDelay`, generic `Delay<N>`
+- **Oscillators** — `SinOsc`, `BlepSaw` (BLEP-corrected sawtooth)
+- **Effects** — `Phaser`, `Phaser16`, `Bubble`, `BubbleCloud`
+- **Sequencing** — `Clock`, `EnvExpDecay`, `Sequencer<N>`,
+  `SampleHold`, `TriggerRamp`, `PoissonEvent`
 
-## Patches
-
-JSON files in `patches/`. Examples include cross-FM synthesis, acid noise, and microtonal sequencing.
-
-Program format (`tropical_program_2`):
-
-```json
-{
-  "schema": "tropical_program_2",
-  "name": "Example",
-  "body": {
-    "op": "block",
-    "decls": [
-      { "op": "program_decl", "name": "Sine", "program": {
-        "op": "program",
-        "name": "Sine",
-        "ports": {
-          "inputs": [{ "name": "freq", "default": 440 }],
-          "outputs": [{ "name": "out" }]
-        },
-        "body": {
-          "op": "block",
-          "decls": [
-            { "op": "reg_decl", "name": "phase", "init": 0 },
-            { "op": "instance_decl", "name": "sin1", "program": "Sin", "inputs": {
-              "x": { "op": "mul", "args": [6.283185307179586, { "op": "reg", "name": "phase" }] }
-            }}
-          ],
-          "assigns": [
-            { "op": "output_assign", "name": "out", "expr": { "op": "nested_out", "ref": "sin1", "output": "out" } },
-            { "op": "next_update", "target": { "kind": "reg", "name": "phase" }, "expr": {
-              "op": "mod", "args": [
-                { "op": "add", "args": [
-                  { "op": "reg", "name": "phase" },
-                  { "op": "div", "args": [{ "op": "input", "name": "freq" }, { "op": "sample_rate" }] }
-                ]},
-                1
-              ]
-            }}
-          ]
-        }
-      }},
-      { "op": "instance_decl", "name": "osc", "program": "Sine", "inputs": { "freq": 440 } },
-      { "op": "instance_decl", "name": "filt", "program": "LadderFilter", "inputs": {
-        "input": { "op": "ref", "instance": "osc", "output": "out" },
-        "cutoff": 2000, "resonance": 0.7
-      }}
-    ],
-    "assigns": []
-  },
-  "audio_outputs": [
-    { "instance": "filt", "output": "lp" }
-  ]
-}
-```
+New types can be defined at runtime via the MCP `define_program` tool;
+no rebuild required.
 
 ## How it works
 
-TypeScript defines programs as symbolic expression trees. The compiler flattens all instances into a single instruction stream, lowers array operations to scalar primitives, and emits a typed program. This crosses a stable C API (via koffi FFI) as JSON, where the C++ engine JIT-compiles it to a native kernel using LLVM ORC. The kernel runs per-sample in an audio callback.
+Patches are graphs of typed signal-flow nodes — written in `.trop`
+source or built incrementally via the MCP tools. The compiler simplifies that graph through a short
+pipeline: names resolve to direct references, generic types
+specialize, sum types decompose, cycles get broken with one-sample
+delays, instances inline into a single body, array operations unroll
+to scalars. The result is a flat, typed instruction stream that
+crosses a stable C API; the C++ engine JIT-compiles it to a native
+kernel using LLVM ORC, and the kernel runs per-sample in an audio
+callback. For browsers the same instruction stream emits to
+WebAssembly and runs in an AudioWorklet.
 
-Rewiring a connection recompiles the entire program and atomically swaps the kernel — state is transferred by name, so registers and delay lines survive the swap. No click, no gap. Feedback loops (A→B→A or A→A) resolve automatically with a one-sample delay, just like hardware propagation — no special configuration needed.
+Rewiring a connection recompiles the whole program and atomically
+swaps the kernel — state transfers by name, so registers and delay
+lines survive the swap. No click, no gap. Feedback loops (A→B→A or
+A→A) resolve automatically with a one-sample delay, just like
+hardware propagation — no special configuration needed.
 
-See `design/architecture.md` for the full technical reference.
+The TypeScript pipeline, the C++ JIT, and the WASM backend are
+pinned to each other by sample-for-sample equivalence tests.
+
+See [`design/architecture.md`](design/architecture.md) for the full
+technical reference and [`CLAUDE.md`](CLAUDE.md) for a contributor
+overview.
+
+## Patches
+
+Example patches in [`patches/`](patches/CLAUDE.md): cross-FM
+synthesis, acid noise, microtonal sequencing, granular bubbles. The
+patch format is documented there.
 
 ## Development
 
 ```bash
-make build                                          # build C++ engine
-cmake --build build -j4 && ctest --test-dir build   # C++ tests (JIT + C API)
-bun test                                            # TypeScript compiler tests
+make build      # build the C++ engine
+make validate   # build + bun test + ctest + stdlib audit
+make mcp-ts     # build + launch MCP server on stdio
+
+cmake --build build -j4 && ctest --test-dir build   # C++ tests in isolation
+bun test                                              # TS tests in isolation
+
+bun run mcp/test_patch.ts patches/sequencer_demo.json [n_frames]
+                                                      # offline smoke: load a patch,
+                                                      # run N samples, report peak output
 ```
 
 ## Troubleshooting
 
-**JIT compilation failure** — JIT failures are fatal; there is no interpreter fallback. Check that your LLVM installation matches what CMakeLists.txt expects. Stale cached kernels can also cause issues — clear `~/.cache/tropical/kernels/` and rebuild.
+**JIT compilation failure** — JIT failures on the audio path are
+fatal; there is no interpreter fallback. Check that your LLVM matches
+what `CMakeLists.txt` expects (≥ 19). Stale cached kernels can also
+cause issues — clear `~/.cache/tropical/kernels/` and rebuild.
 
-**No audio output** — Verify your default output device is set correctly in System Settings. `audio_status` reports device info and callback stats.
+**No audio output** — Verify your default output device is correct.
+The MCP `audio_status` tool reports device info and callback stats;
+`audio_status.is_reconnecting` flags an in-progress disconnect recovery.
+
+**Browser: SharedArrayBuffer unavailable** — The web demo prefers SAB
+for low-latency live param updates and falls back to a plain
+`ArrayBuffer` when COOP/COEP isn't enabled. Static params still work
+via init-time snapshot; live updates won't cross the worklet boundary.
+`bun web/dev.ts` sets the right headers for local development.
 
 ## License
 

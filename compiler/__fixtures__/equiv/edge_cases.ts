@@ -366,6 +366,128 @@ const arrayLetGenerateWriteback: EdgeFixture = {
   tolerance: 12,
 }
 
+// ─────────────────────────────────────────────────────────────
+// Phase C — known expected-type sites (TDD plan §Phase C)
+// Targeted regressions; the universal property "expected= is a hint
+// that doesn't change ⟦e⟧" is not class-tested here.
+// ─────────────────────────────────────────────────────────────
+
+/** (R) `clamp(bool_expr, 0, 1)` — bool result type would push down
+ *  into the lo / hi literals. compileTernary handles both Select
+ *  and Clamp; 52bd3a8 stripped bool for Select arms but the
+ *  fix-comment didn't mention Clamp. The exact analog of that fix's
+ *  repro for Select. Should compile without throwing
+ *  "literal cannot narrow to bool". */
+const clampBoolArms: EdgeFixture = {
+  name: 'clamp_bool_arms',
+  program: {
+    op: 'program',
+    name: 'ClampBoolArms',
+    ports: { inputs: [{ name: 'x', default: 0.5 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        // clamp( gt(x, 0), 0, 1 ) — a bool input clamped to [0,1].
+        // 0 and 1 are int literals; if the bool expectation propagates
+        // to them they'd narrow to bool (legal) — but extending to a
+        // hi=2 case forces the issue. Use [0, 2] to make the bug
+        // visible: 2 cannot narrow to bool.
+        expr: { op: 'clamp', args: [
+          { op: 'gt', args: [{ op: 'input', name: 'x' }, 0] },
+          0, 2,
+        ]},
+      }],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** (R) `select(cond, gt(a,b), x*0.5)` — mixed bool/float arms. The
+ *  cond's `expected='bool'` could leak into the float arm where 0.5
+ *  literal would try to narrow to bool. Asserts the propagation
+ *  strips bool before reaching the float arm. */
+const selectMixedArms: EdgeFixture = {
+  name: 'select_mixed_arms',
+  program: {
+    op: 'program',
+    name: 'SelectMixedArms',
+    ports: { inputs: [{ name: 'x', default: 0.3 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        // select( gt(x, 0), gt(x, 0.5), x * 0.5 + 0.25 )
+        expr: { op: 'select', args: [
+          { op: 'gt', args: [{ op: 'input', name: 'x' }, 0] },
+          { op: 'gt', args: [{ op: 'input', name: 'x' }, 0.5] },
+          { op: 'add', args: [
+            { op: 'mul', args: [{ op: 'input', name: 'x' }, 0.5] },
+            0.25,
+          ]},
+        ]},
+      }],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** (R) `eq(neq(a,b), neq(c,d))` — chained bool comparisons. Here
+ *  expected='bool' *should* propagate (both args are themselves
+ *  bools). Failure mode: over-aggressive bool-stripping pushes the
+ *  inner neq's args to compile as float and miss bool-specific
+ *  codegen. Pin that the chained bool→bool path still works. */
+const eqOfNeqs: EdgeFixture = {
+  name: 'eq_of_neqs',
+  program: {
+    op: 'program',
+    name: 'EqOfNeqs',
+    ports: { inputs: [{ name: 'x', default: 0.3 }], outputs: ['out'] },
+    body: { op: 'block',
+      assigns: [{ op: 'outputAssign', name: 'out',
+        // eq( neq(x, 0), neq(x, 0.5) )
+        expr: { op: 'eq', args: [
+          { op: 'neq', args: [{ op: 'input', name: 'x' }, 0] },
+          { op: 'neq', args: [{ op: 'input', name: 'x' }, 0.5] },
+        ]},
+      }],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** (R) `expected='int'` through `div`. Symmetric to the bool leak:
+ *  if an int hint propagates into a div whose result needs to be
+ *  float, the result silently truncates. Here `add(int_reg, div(x, 2))`
+ *  pushes int into div; div's float-typed result must NOT narrow to
+ *  int. Pin the float result. */
+const intHintThroughDiv: EdgeFixture = {
+  name: 'int_hint_through_div',
+  program: {
+    op: 'program',
+    name: 'IntHintThroughDiv',
+    ports: { inputs: [{ name: 'x', default: 1 }], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        // int-typed reg holding a constant int. Forces the add's left
+        // arg expected to be int; the right (div) inherits the hint.
+        { op: 'regDecl', name: 'k', init: 0, type: 'int' as any },
+      ],
+      assigns: [
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'k' },
+          expr: { op: 'reg', name: 'k' } },
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'add', args: [
+            { op: 'reg', name: 'k' },
+            { op: 'div', args: [{ op: 'input', name: 'x' }, 2] },
+          ]},
+        },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
 // (D) Sum-typed delay carrying an array field — Phase B Test 11 (deferred).
 // The plan calls for a variant whose payload is `float[N]` (e.g. a Box4
 // holding a 4-element payload), with the wholesale writeback covered by
@@ -390,4 +512,9 @@ export const EDGE_FIXTURES: EdgeFixture[] = [
   arrayZipWithWriteback,
   arrayScanWriteback,
   arrayLetGenerateWriteback,
+  // Phase C — known expected-type sites
+  clampBoolArms,
+  selectMixedArms,
+  eqOfNeqs,
+  intHintThroughDiv,
 ]

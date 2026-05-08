@@ -222,6 +222,55 @@ describe('Phase B — wholesale-array writeback absolute-value pin', () => {
   })
 })
 
+describe('Phase D — mutual register update absolute-value pin', () => {
+  // Read-before-write isolation: at every sample, both regs see the
+  // *previous-sample* value of the other, never an intermediate
+  // post-update value. The recurrence simplifies to a = b = sample
+  // index, so output is 2 * sample_index (scalar fixture) or
+  // sample_index (array fixture, reads only arr1[0]). Pin the first
+  // 4 samples exactly — failure mode is off-by-one-sample, not a
+  // numeric drift, so toBe (not toBeCloseTo) is the right assertion.
+  test('scalar mutual reg: out[t] = 2*t (first 4 samples)', () => {
+    const session = makeSession(BUFFER_LENGTH)
+    loadStdlib(session)
+    const fixture = EDGE_FIXTURES.find(f => f.name === 'scalar_mutual_reg')!
+    const type = loadProgramAsType(fixture.program, session)!
+    session.typeRegistry.set(fixture.program.name, type)
+    const inst = type.instantiateAs('inst')
+    session.instanceRegistry.set('inst', inst)
+    session.graphOutputs.push({ instance: 'inst', output: inst.outputNames[0] })
+    applyFlatPlan(session, session.runtime)
+    session.graph.primeJit()
+    session.graph.process()
+    const buf = session.graph.outputBuffer
+    // After /20 mix scaling: out[t] = 2*t / 20.
+    for (let t = 0; t < 4; t++) {
+      expect(buf[t] * 20).toBeCloseTo(2 * t, 10)
+    }
+    session.graph.dispose()
+  })
+
+  test('array mutual reg: arr1[0][t] = t (first 4 samples)', () => {
+    const session = makeSession(BUFFER_LENGTH)
+    loadStdlib(session)
+    const fixture = EDGE_FIXTURES.find(f => f.name === 'array_mutual_reg')!
+    const type = loadProgramAsType(fixture.program, session)!
+    session.typeRegistry.set(fixture.program.name, type)
+    const inst = type.instantiateAs('inst')
+    session.instanceRegistry.set('inst', inst)
+    session.graphOutputs.push({ instance: 'inst', output: inst.outputNames[0] })
+    applyFlatPlan(session, session.runtime)
+    session.graph.primeJit()
+    session.graph.process()
+    const buf = session.graph.outputBuffer
+    // After /20 mix scaling: out[t] = t / 20.
+    for (let t = 0; t < 4; t++) {
+      expect(buf[t] * 20).toBeCloseTo(t, 10)
+    }
+    session.graph.dispose()
+  })
+})
+
 describe('JIT state transfer across loadPlan (Phase D P0.1)', () => {
   test('state preserved when wiring changes between two loadPlan calls', () => {
     // Build plan A: SinOsc → output. Run a buffer; SinOsc accumulates phase.

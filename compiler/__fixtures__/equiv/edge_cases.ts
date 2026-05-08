@@ -488,6 +488,99 @@ const intHintThroughDiv: EdgeFixture = {
   tolerance: 12,
 }
 
+// ─────────────────────────────────────────────────────────────
+// Phase D — mutual register update (TDD plan §Phase D)
+//
+// Two-pass writeback isolation: each next-state must be a function of
+// the *current-state* of all regs, not of intermediate post-update
+// values. The 66ae9f9 fix-comment claims this invariant for array regs;
+// these fixtures exercise it directly. Sample-by-sample exact pinning
+// — failure mode is off-by-one-sample, not numeric drift.
+// ─────────────────────────────────────────────────────────────
+
+/** (D) Scalar mutual update — `next a = b + 1; next b = a + 1`. Both
+ *  init 0. Read-before-write isolation: at sample 1 both read the
+ *  previous (init=0) value of the other, so both become 1. At sample 2
+ *  both read each other's value 1, both become 2. Sequence: a=b=t.
+ *
+ *  Bug shape: if the JIT writes `a = b + 1` first, then evaluates
+ *  `b = a + 1` it sees the just-updated `a`. Pinned exactly to catch
+ *  the off-by-one-sample drift this would produce.
+ *
+ *  Output is `a + b`. Sample 0: 0 + 0 = 0. Sample 1: 1 + 1 = 2.
+ *  Sample 2: 2 + 2 = 4. After /20 mix scaling: 0, 0.1, 0.2, 0.3. */
+const scalarMutualReg: EdgeFixture = {
+  name: 'scalar_mutual_reg',
+  program: {
+    op: 'program',
+    name: 'ScalarMutualReg',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        { op: 'regDecl', name: 'a', init: 0 },
+        { op: 'regDecl', name: 'b', init: 0 },
+      ],
+      assigns: [
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'add', args: [
+            { op: 'reg', name: 'a' }, { op: 'reg', name: 'b' },
+          ]}},
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'a' },
+          expr: { op: 'add', args: [{ op: 'reg', name: 'b' }, 1] } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'b' },
+          expr: { op: 'add', args: [{ op: 'reg', name: 'a' }, 1] } },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** (D) Array mutual update — same temporal-isolation property at
+ *  array type. `next arr1 = generate(N, i => arr2[i] + 1)`,
+ *  `next arr2 = generate(N, i => arr1[i] + 1)`. Both init zeros(2).
+ *
+ *  Distinct from Phase B: B tests *writeback correctness* (does the
+ *  array land in the persistent slot); D tests *temporal isolation*
+ *  (does the writeback happen *after* all reads complete).
+ *
+ *  Output is arr1[0]. Same recurrence as the scalar version:
+ *  arr1[0] = sample-index. After /20 mix: 0, 0.05, 0.1, ... */
+const arrayMutualReg: EdgeFixture = {
+  name: 'array_mutual_reg',
+  program: {
+    op: 'program',
+    name: 'ArrayMutualReg',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        { op: 'regDecl', name: 'arr1', init: [0, 0] as any },
+        { op: 'regDecl', name: 'arr2', init: [0, 0] as any },
+      ],
+      assigns: [
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'index', args: [{ op: 'reg', name: 'arr1' }, 0] } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'arr1' },
+          expr: { op: 'generate', count: 2, var: 'i',
+            body: { op: 'add', args: [
+              { op: 'index', args: [{ op: 'reg', name: 'arr2' }, { op: 'binding', name: 'i' }] },
+              1,
+            ]},
+          } as any },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'arr2' },
+          expr: { op: 'generate', count: 2, var: 'i',
+            body: { op: 'add', args: [
+              { op: 'index', args: [{ op: 'reg', name: 'arr1' }, { op: 'binding', name: 'i' }] },
+              1,
+            ]},
+          } as any },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
 // (D) Sum-typed delay carrying an array field — Phase B Test 11 (deferred).
 // The plan calls for a variant whose payload is `float[N]` (e.g. a Box4
 // holding a 4-element payload), with the wholesale writeback covered by
@@ -517,4 +610,7 @@ export const EDGE_FIXTURES: EdgeFixture[] = [
   selectMixedArms,
   eqOfNeqs,
   intHintThroughDiv,
+  // Phase D — mutual register update (read-before-write isolation)
+  scalarMutualReg,
+  arrayMutualReg,
 ]

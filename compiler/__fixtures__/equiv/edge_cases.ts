@@ -219,6 +219,164 @@ const boolPropagationThroughArith: EdgeFixture = {
   tolerance: 12,
 }
 
+// ─────────────────────────────────────────────────────────────
+// Phase B — wholesale-array writebacks beyond `generate`
+// (TDD plan: ~/.claude/plans/we-re-doing-a-tdd-eager-waffle.md)
+//
+// Same shape as `arrayRegWholesaleWriteback`: `next arr = <expr>` where
+// `<expr>` is built from a different combinator each fixture. Each one
+// exercises an independent unrolling path in `array_lower.ts` followed
+// by the same JIT writeback fix from 66ae9f9.
+// ─────────────────────────────────────────────────────────────
+
+/** (D) `next arr = select(cond, arr1, arr2)` — array-typed Select.
+ *  cond is `sampleIndex < 4`; arr1=[1,2,3,4], arr2=[10,20,30,40].
+ *  Sample 0..3 reads arr1; sample 4+ reads arr2. Output is index 2,
+ *  so sample 0 → 3, sample 4 → 30 (post-/20: 0.15, 1.5).
+ *
+ *  Note: select on whole arrays may not be supported by the lowering
+ *  pipeline today. If `applyFlatPlan` throws, that's a pinned
+ *  type-error (per the plan); record here and downgrade to a
+ *  direct-error fixture if needed. */
+const arraySelectWriteback: EdgeFixture = {
+  name: 'array_reg_select_writeback',
+  program: {
+    op: 'program',
+    name: 'ArrayRegSelectWriteback',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        { op: 'regDecl', name: 'arr', init: [0, 0, 0, 0] as any },
+      ],
+      assigns: [
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'index', args: [{ op: 'reg', name: 'arr' }, 2] } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'arr' },
+          expr: { op: 'select', args: [
+            { op: 'lt', args: [{ op: 'sampleIndex' }, 4] },
+            [1, 2, 3, 4],
+            [10, 20, 30, 40],
+          ]} as any },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** (D) `next arr = zipWith(arr_a, arr_b, (x, y) => x + y)` — exercises
+ *  array_lower's zipWith unroll in nextUpdate position. The plan calls
+ *  this `map2`, but tropical's `map2` is single-array; the right
+ *  primitive for two arrays is `zipWith`. */
+const arrayZipWithWriteback: EdgeFixture = {
+  name: 'array_reg_zipwith_writeback',
+  program: {
+    op: 'program',
+    name: 'ArrayRegZipWithWriteback',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        { op: 'regDecl', name: 'arr', init: [0, 0, 0, 0] as any },
+      ],
+      assigns: [
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'index', args: [{ op: 'reg', name: 'arr' }, 2] } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'arr' },
+          expr: { op: 'zipWith',
+            a: [1, 2, 3, 4],
+            b: [10, 20, 30, 40],
+            x_var: 'x', y_var: 'y',
+            body: { op: 'add', args: [
+              { op: 'binding', name: 'x' },
+              { op: 'binding', name: 'y' },
+            ]},
+          } as any },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** (D) `next arr = scan(over, init, f)` — scan emits intermediate
+ *  accumulators. With over=[1,2,3,4], init=0, f=acc+elem: result is
+ *  [1, 3, 6, 10] (running sums). Reads index 3 → 10 (post-/20: 0.5). */
+const arrayScanWriteback: EdgeFixture = {
+  name: 'array_reg_scan_writeback',
+  program: {
+    op: 'program',
+    name: 'ArrayRegScanWriteback',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        { op: 'regDecl', name: 'arr', init: [0, 0, 0, 0] as any },
+      ],
+      assigns: [
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'index', args: [{ op: 'reg', name: 'arr' }, 3] } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'arr' },
+          expr: { op: 'scan',
+            over: [1, 2, 3, 4],
+            init: 0,
+            acc_var: 'acc', elem_var: 'x',
+            body: { op: 'add', args: [
+              { op: 'binding', name: 'acc' },
+              { op: 'binding', name: 'x' },
+            ]},
+          } as any },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+/** (D) `next arr = let { tmp = generate(N, ...) } in tmp` — the
+ *  let-binding indirection between the producer combinator and the
+ *  writeback exercises the let-elimination path. */
+const arrayLetGenerateWriteback: EdgeFixture = {
+  name: 'array_reg_let_generate_writeback',
+  program: {
+    op: 'program',
+    name: 'ArrayRegLetGenerateWriteback',
+    ports: { inputs: [], outputs: ['out'] },
+    body: { op: 'block',
+      decls: [
+        { op: 'regDecl', name: 'arr', init: [0, 0, 0, 0] as any },
+      ],
+      assigns: [
+        { op: 'outputAssign', name: 'out',
+          expr: { op: 'index', args: [{ op: 'reg', name: 'arr' }, 2] } },
+        { op: 'nextUpdate', target: { kind: 'reg', name: 'arr' },
+          expr: { op: 'let',
+            bind: {
+              tmp: { op: 'generate', count: 4, var: 'i',
+                body: { op: 'add', args: [
+                  { op: 'sampleIndex' },
+                  { op: 'binding', name: 'i' },
+                ]},
+              },
+            },
+            in: { op: 'binding', name: 'tmp' },
+          } as any },
+      ],
+    },
+  },
+  expectAllFinite: true,
+  tolerance: 12,
+}
+
+// (D) Sum-typed delay carrying an array field — Phase B Test 11 (deferred).
+// The plan calls for a variant whose payload is `float[N]` (e.g. a Box4
+// holding a 4-element payload), with the wholesale writeback covered by
+// the same fix as `arrayRegWholesaleWriteback`. Today this isn't
+// expressible in the IR: `StructField` is `{name, type: ScalarKind}`
+// with no shape field, so array-typed payload fields are silently
+// dropped at elaboration. Implementing the full path requires extending
+// StructField + parse + elaborator + sum_lower (multi-slot allocation
+// per payload field) and bindings/extract paths. Tracked as a
+// follow-up; not in this PR's scope.
+
 export const EDGE_FIXTURES: EdgeFixture[] = [
   divByZero,
   sqrtNegative,
@@ -227,4 +385,9 @@ export const EDGE_FIXTURES: EdgeFixture[] = [
   selectWithSpecials,
   arrayRegWholesaleWriteback,
   boolPropagationThroughArith,
+  // Phase B — wholesale-array writebacks
+  arraySelectWriteback,
+  arrayZipWithWriteback,
+  arrayScanWriteback,
+  arrayLetGenerateWriteback,
 ]

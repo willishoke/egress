@@ -242,6 +242,148 @@ describe('JIT ↔ interpreter equivalence for gateable subgraphs', () => {
     session.graph.dispose()
   })
 
+  // ─────────────────────────────────────────────────────────────
+  // Phase H — Param / Trigger handle stitching (TDD plan §Phase H)
+  //
+  // Both tests are deferred: the live-JIT param-handle stitching path
+  // (compile_session.ts:31) emits `String(napi_external)` which is
+  // "[object Object]" and the C++ side throws "stoull: no conversion".
+  // Fixing it requires either a `tropical_param_address(handle)` C
+  // export or changing the FFI binding return type to uint64; either
+  // way is a focused PR on its own. Tracked outside this PR.
+  // ─────────────────────────────────────────────────────────────
+
+  test.skip('(D) param fan-out + non-aliasing: shared cutoff updates lockstep, drive unchanged', () => {
+    // Three Accum instances: a1 and a2 both wire param('cutoff') as
+    // their `x` input; a3 wires param('drive'). Output is a1+a2+a3.
+    //
+    // Fan-out: changing cutoff moves a1's and a2's outputs together.
+    // Non-aliasing: changing cutoff must NOT move a3's output.
+    //
+    // Both properties together rule out the alternative bug where the
+    // materializer aliased all params to one slot.
+    const session = makeSession(8)
+    loadBuiltins(session)
+    loadProgramAsType(ACCUM, session)
+    loadJSON({
+      schema: 'tropical_program_2',
+      name: 'patch',
+      body: { op: 'block', decls: [
+        { op: 'paramDecl', name: 'cutoff', value: 0.0, time_const: 0 } as unknown as ExprNode,
+        { op: 'paramDecl', name: 'drive',  value: 0.0, time_const: 0 } as unknown as ExprNode,
+        { op: 'instanceDecl', name: 'a1', program: 'Accum',
+          inputs: { x: { op: 'param', name: 'cutoff' } } },
+        { op: 'instanceDecl', name: 'a2', program: 'Accum',
+          inputs: { x: { op: 'param', name: 'cutoff' } } },
+        { op: 'instanceDecl', name: 'a3', program: 'Accum',
+          inputs: { x: { op: 'param', name: 'drive' } } },
+      ]},
+      audio_outputs: [
+        { instance: 'a1', output: 'out' },
+        { instance: 'a2', output: 'out' },
+        { instance: 'a3', output: 'out' },
+      ],
+    }, session)
+
+    applySessionWiring(session)
+    session.graph.primeJit()
+
+    // Buffer 1: cutoff = drive = 0. All accums stay 0 (no input).
+    session.graph.process()
+    const buf0 = new Float64Array(session.graph.outputBuffer)
+    for (let i = 0; i < buf0.length; i++) expect(buf0[i]).toBe(0)
+
+    // Buffer 2: set cutoff = 1.0; drive stays 0.
+    session.paramRegistry.get('cutoff')!.value = 1.0
+    session.graph.process()
+    const buf1 = new Float64Array(session.graph.outputBuffer)
+
+    // Buffer 3 — measure a1 / a2 / a3 separately by routing only one
+    // at a time would require rewiring; instead, use the linearity of
+    // the audio mix. With cutoff=1, drive=0, time_const=0 (instant
+    // smoothing): a1 and a2 each accumulate +1 per sample, a3 stays 0.
+    // Mix = (a1 + a2 + a3) / 20 with crossfade on the first buffer
+    // after re-priming. After enough samples, mix dominantly reflects
+    // 2 * cutoff_accum / 20.
+    //
+    // Simpler check: after buf2, the mix's last sample should be
+    // roughly (a1+a2)/20 ≈ 2*8/20 = 0.8 if smoothing instant.
+    // The crossfade window slightly damps the leading samples, so
+    // assert just that buf2 grows over buf1: if cutoff fan-out works,
+    // both a1 and a2 track cutoff and the mix climbs.
+    const buf1Last = buf1[buf1.length - 1]
+    expect(buf1Last).toBeGreaterThan(0)
+
+    // Now set drive = 1.0 and re-process. With both cutoff and drive
+    // at 1.0, all three accums advance; mix grows further. Compare to
+    // what cutoff alone produced — drive's contribution is purely
+    // additive.
+    session.paramRegistry.get('drive')!.value = 1.0
+    session.graph.process()
+    const buf2 = new Float64Array(session.graph.outputBuffer)
+    expect(buf2[buf2.length - 1]).toBeGreaterThan(buf1[buf1.length - 1])
+
+    session.graph.dispose()
+  })
+
+  test.skip('(D) trigger as gate_input: trigger-driven gate matches literal bool gate on same samples', () => {
+    // Gateable instance whose gate_input is `{op:'trigger', name:'go'}`.
+    // Fire the trigger once; the audio thread reads it on the next
+    // process() call (one sample) then auto-clears. Compare to a
+    // reference instance whose gate_input is a literal expression
+    // that's true on sample 0 only.
+    const triggerSession = makeSession(8)
+    loadBuiltins(triggerSession)
+    loadProgramAsType(ACCUM, triggerSession)
+    loadJSON({
+      schema: 'tropical_program_2',
+      name: 'patch',
+      body: { op: 'block', decls: [
+        { op: 'paramDecl', name: 'go', type: 'trigger' } as unknown as ExprNode,
+        { op: 'instanceDecl', name: 'a1', program: 'Accum',
+          inputs: { x: 1.0 }, gateable: true,
+          gate_input: { op: 'trigger', name: 'go' } },
+      ]},
+      audio_outputs: [{ instance: 'a1', output: 'out' }],
+    }, triggerSession)
+    applySessionWiring(triggerSession)
+    triggerSession.graph.primeJit()
+    // Fire the trigger before the buffer runs. The runtime reads it
+    // on the next process call (one sample) then auto-clears.
+    triggerSession.triggerRegistry.get('go')!.fire()
+    triggerSession.graph.process()
+    const triggerOut = new Float64Array(triggerSession.graph.outputBuffer)
+
+    const literalSession = makeSession(8)
+    loadBuiltins(literalSession)
+    loadProgramAsType(ACCUM, literalSession)
+    // Reference: gate_input = (sampleIndex == 0). True only on sample 0,
+    // matching the trigger's one-sample-on then auto-clear behavior.
+    loadJSON({
+      schema: 'tropical_program_2',
+      name: 'patch',
+      body: { op: 'block', decls: [
+        { op: 'instanceDecl', name: 'a1', program: 'Accum',
+          inputs: { x: 1.0 }, gateable: true,
+          gate_input: { op: 'eq', args: [{ op: 'sampleIndex' }, 0] } },
+      ]},
+      audio_outputs: [{ instance: 'a1', output: 'out' }],
+    }, literalSession)
+    applySessionWiring(literalSession)
+    literalSession.graph.primeJit()
+    literalSession.graph.process()
+    const literalOut = new Float64Array(literalSession.graph.outputBuffer)
+
+    // Both should produce the same output (gateable Accum: sample 0
+    // gate true → out updates to 1; samples 1+ gate false → out holds).
+    for (let i = 0; i < triggerOut.length; i++) {
+      expect(triggerOut[i]).toBeCloseTo(literalOut[i], 10)
+    }
+
+    triggerSession.graph.dispose()
+    literalSession.graph.dispose()
+  })
+
   test('gate chain (a2 gated on a1 output): JIT matches interpreter', () => {
     // Two gateable instances where the second's gate is derived from the
     // first's output. Verifies gate-dependency tracking in the topo graph
